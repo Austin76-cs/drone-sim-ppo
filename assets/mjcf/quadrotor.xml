@@ -1,0 +1,59 @@
+<!--
+  Quadrotor MJCF adapted from web-sourced MuJoCo quadrotor models:
+  - https://github.com/zicher3d-org/domus_mujoco/blob/master/domus_mujoco/scenes/gymnasium_robotics/envs/assets/quadrotor.xml
+  - https://gist.github.com/whiteadversary/77a0f64df3f93f9f08334ca07ec9e8c2
+-->
+<mujoco model="drone_quadrotor">
+  <compiler angle="radian" autolimits="true"/>
+  <option timestep="0.002" gravity="0 0 -9.81" integrator="RK4"/>
+
+  <default>
+    <geom type="capsule" rgba="0.18 0.18 0.22 1" condim="3"/>
+    <site size="0.004" rgba="0.95 0.25 0.25 1"/>
+    <motor ctrllimited="true" ctrlrange="0 6"/>
+  </default>
+
+  <worldbody>
+    <light name="sun" pos="0 0 2.5" diffuse="1 1 1"/>
+    <geom name="ground" type="plane" size="4 4 0.1" rgba="0.1 0.13 0.16 1"/>
+    <camera name="track" mode="trackcom" pos="0 -2.0 1.2" xyaxes="1 0 0 0 0 1"/>
+
+    <body name="drone" pos="0 0 0.35">
+      <freejoint name="drone_free"/>
+      <inertial pos="0 0 0" mass="1.0" diaginertia="0.01 0.01 0.02"/>
+
+      <geom name="body" type="box" size="0.045 0.045 0.014" rgba="0.23 0.23 0.27 1"/>
+      <geom name="arm_1" fromto="0 0 0 0.11 0.11 0" size="0.006"/>
+      <geom name="arm_2" fromto="0 0 0 -0.11 0.11 0" size="0.006"/>
+      <geom name="arm_3" fromto="0 0 0 -0.11 -0.11 0" size="0.006"/>
+      <geom name="arm_4" fromto="0 0 0 0.11 -0.11 0" size="0.006"/>
+
+      <geom name="prop_1" type="cylinder" pos="0.11 0.11 0" size="0.03 0.002" rgba="0.7 0.1 0.1 0.9"/>
+      <geom name="prop_2" type="cylinder" pos="-0.11 0.11 0" size="0.03 0.002" rgba="0.1 0.7 0.1 0.9"/>
+      <geom name="prop_3" type="cylinder" pos="-0.11 -0.11 0" size="0.03 0.002" rgba="0.1 0.1 0.7 0.9"/>
+      <geom name="prop_4" type="cylinder" pos="0.11 -0.11 0" size="0.03 0.002" rgba="0.7 0.7 0.1 0.9"/>
+
+      <site name="motor_1" pos="0.11 0.11 0"/>
+      <site name="motor_2" pos="-0.11 0.11 0"/>
+      <site name="motor_3" pos="-0.11 -0.11 0"/>
+      <site name="motor_4" pos="0.11 -0.11 0"/>
+      <site name="imu" pos="0 0 0"/>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <motor name="motor_1" site="motor_1" gear="0 0 1 0 0 0.04"/>
+    <motor name="motor_2" site="motor_2" gear="0 0 1 0 0 -0.04"/>
+    <motor name="motor_3" site="motor_3" gear="0 0 1 0 0 0.04"/>
+    <motor name="motor_4" site="motor_4" gear="0 0 1 0 0 -0.04"/>
+  </actuator>
+
+  <sensor>
+    <gyro site="imu"/>
+    <accelerometer site="imu"/>
+    <framequat objtype="body" objname="drone"/>
+    <framepos objtype="body" objname="drone"/>
+    <framelinvel objtype="body" objname="drone"/>
+    <frameangvel objtype="body" objname="drone"/>
+  </sensor>
+</mujoco>

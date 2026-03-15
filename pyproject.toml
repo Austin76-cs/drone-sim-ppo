@@ -1,0 +1,28 @@
+[project]
+name = "dronesim"
+version = "0.1.0"
+description = "PPO drone racing with MuJoCo and Stable-Baselines3"
+requires-python = ">=3.12"
+dependencies = [
+    "mujoco>=3.3.0",
+    "stable-baselines3>=2.4.0",
+    "gymnasium>=1.0.0",
+    "torch>=2.4.0",
+    "numpy>=1.26.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.9.0",
+    "pytest>=8.0",
+]
+
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]

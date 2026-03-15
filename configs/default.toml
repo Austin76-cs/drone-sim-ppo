@@ -1,0 +1,64 @@
+[runtime]
+seed = 7
+device = "cpu"
+
+[sim]
+sim_hz = 500
+policy_hz = 50
+episode_seconds = 30.0
+model_xml_path = "assets/mjcf/quadrotor.xml"
+gravity = 9.81
+mass_jitter = 0.1
+thrust_noise_std = 0.01
+
+[drone]
+mass_kg = 1.0
+arm_length_m = 0.12
+max_total_thrust_n = 20.0
+max_vertical_velocity_m_s = 2.0
+max_tilt_rad = 0.45
+max_body_rate_rad_s = 6.0
+motor_time_constant_s = 0.03
+vertical_velocity_kp = 0.30
+attitude_kp = 4.0
+body_rate_kp = 0.45
+yaw_rate_kp = 0.30
+
+[ppo]
+learning_rate = 3e-4
+n_steps = 2048
+batch_size = 64
+n_epochs = 10
+gamma = 0.99
+gae_lambda = 0.95
+clip_range = 0.2
+ent_coef = 0.001
+net_arch = [256, 256]
+num_envs = 8
+total_timesteps = 3_000_000
+
+[reward]
+gate_proximity = 0.20
+gate_passage_bonus = 10.0
+progress = 1.0
+velocity_alignment = 0.50
+time_penalty = -0.005
+collision_penalty = -3.0
+control_effort = -0.02
+alive_bonus = 0.0
+
+[task]
+curriculum = "gate_race"
+curriculum_window = 12
+curriculum_min_episodes = 6
+intro_threshold = 0.70
+slalom_threshold = 0.64
+sprint_threshold = 0.58
+gate_radius_m = 0.45
+gate_depth_m = 0.15
+gate_pass_margin_m = 0.12
+base_gate_spacing_m = 2.5
+
+[eval]
+n_episodes = 20
+deterministic = true
