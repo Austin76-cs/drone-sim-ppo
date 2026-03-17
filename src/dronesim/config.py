@@ -8,6 +8,7 @@ from typing import Any
 
 @dataclass(slots=True)
 class SimConfig:
+    backend: str = "warp"
     sim_hz: int = 500
     policy_hz: int = 50
     episode_seconds: float = 20.0
@@ -15,6 +16,10 @@ class SimConfig:
     gravity: float = 9.81
     mass_jitter: float = 0.1
     thrust_noise_std: float = 0.01
+    backend_device: str = ""
+    action_smoothing: float = 1.0
+    guided_action_weight: float = 0.0
+    residual_action_scale: float = 1.0
 
 
 @dataclass(slots=True)
@@ -53,6 +58,9 @@ class RewardConfig:
     gate_passage_bonus: float = 5.0
     progress: float = 0.40
     velocity_alignment: float = 0.20
+    lateral_velocity_penalty: float = 0.0
+    attitude_stability: float = 0.0
+    angular_rate_stability: float = 0.0
     time_penalty: float = -0.002
     collision_penalty: float = -5.0
     control_effort: float = -0.05
@@ -77,6 +85,8 @@ class TaskConfig:
 class EvalConfig:
     n_episodes: int = 20
     deterministic: bool = True
+    eval_freq_timesteps: int = 100_000
+    checkpoint_freq_timesteps: int = 100_000
 
 
 @dataclass(slots=True)

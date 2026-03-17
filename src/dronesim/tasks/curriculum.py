@@ -69,14 +69,14 @@ def _get_stage_spec(stage: CurriculumStage, config: TaskConfig) -> StageSpec:
             num_gates=3,
             spacing_m=config.base_gate_spacing_m,
             lateral_span_m=0.0,
-            vertical_span_m=0.15,
-            spawn_backtrack_m=1.8,
-            spawn_xy_jitter_m=0.08,
-            spawn_tilt_rad=0.18,
-            spawn_speed_m_s=0.18,
-            spawn_omega_rad_s=0.8,
-            max_distance_m=3.5,
-            randomization_scale=0.35,
+            vertical_span_m=0.08,
+            spawn_backtrack_m=1.7,
+            spawn_xy_jitter_m=0.05,
+            spawn_tilt_rad=0.10,
+            spawn_speed_m_s=0.10,
+            spawn_omega_rad_s=0.25,
+            max_distance_m=3.8,
+            randomization_scale=0.18,
         )
     if stage == CurriculumStage.OFFSET:
         return StageSpec(
@@ -148,6 +148,7 @@ def generate_gate_course(
 class StageController:
     config: TaskConfig
     stage: CurriculumStage = CurriculumStage.INTRO
+    locked_stage: CurriculumStage | None = None
     _history: dict[CurriculumStage, deque[float]] = field(init=False, repr=False)
     _episode_counts: dict[CurriculumStage, int] = field(init=False, repr=False)
 
@@ -211,6 +212,10 @@ class StageController:
         history = self._history[summary.stage]
         history.append(summary.score)
 
+        if self.locked_stage is not None:
+            self.stage = self.locked_stage
+            return
+
         if summary.stage != self.stage or self.stage == CurriculumStage.SLALOM:
             return
 
@@ -227,6 +232,10 @@ class StageController:
             self.stage = CurriculumStage(int(self.stage) + 1)
 
     def force_stage(self, stage: CurriculumStage) -> None:
+        self.stage = stage
+
+    def lock_to_stage(self, stage: CurriculumStage) -> None:
+        self.locked_stage = stage
         self.stage = stage
 
     @property

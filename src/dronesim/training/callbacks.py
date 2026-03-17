@@ -15,6 +15,12 @@ class RewardBreakdownCallback(BaseCallback):
                 self.logger.record("reward/gate_passage", info["reward_gate_passage"])
                 self.logger.record("reward/progress", info["reward_progress"])
                 self.logger.record("reward/velocity_alignment", info["reward_velocity_alignment"])
+                if "reward_lateral_velocity_penalty" in info:
+                    self.logger.record("reward/lateral_velocity_penalty", info["reward_lateral_velocity_penalty"])
+                if "reward_attitude_stability" in info:
+                    self.logger.record("reward/attitude_stability", info["reward_attitude_stability"])
+                if "reward_angular_rate_stability" in info:
+                    self.logger.record("reward/angular_rate_stability", info["reward_angular_rate_stability"])
                 self.logger.record("reward/control_effort", info["reward_control_effort"])
             if "gates_cleared" in info:
                 self.logger.record("episode/gates_cleared", info["gates_cleared"])

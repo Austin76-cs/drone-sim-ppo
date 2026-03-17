@@ -15,6 +15,7 @@ from dronesim.tasks.curriculum import (
     EpisodeTask,
     StageController,
 )
+from dronesim.tasks.guidance import guided_gate_action
 from dronesim.tasks.rewards import (
     body_frame_gate,
     compute_total_reward,
@@ -64,8 +65,10 @@ class DroneRaceEnv(gym.Env):
         self.step_idx = 0
         self.episode_steps = self.base_episode_steps
         self.current_gate_forward_error = 0.0
+        self.gate_start_distance = 1.0
         self.gate_start_forward_error = 1.0
         self.last_reward_info: RewardInfo | None = None
+        self.prev_action = np.zeros(4, dtype=np.float64)
 
     def _current_gate(self) -> GateSpec:
         assert self.current_task is not None
@@ -86,7 +89,8 @@ class DroneRaceEnv(gym.Env):
         if next_gate is not None:
             next_gate_body = body_frame_gate(self.state, next_gate)
         else:
-            next_gate_body = np.zeros(3, dtype=np.float64)
+            # Keep terminal-gate observations consistent with earlier gates.
+            next_gate_body = cur_gate_body.copy()
 
         obs = np.concatenate([
             self.state.pos,
@@ -100,14 +104,24 @@ class DroneRaceEnv(gym.Env):
 
     def _set_gate_progress_reference(self) -> None:
         assert self.state is not None
-        forward_error, _, _ = gate_relative_geometry(self.state, self._current_gate())
+        gate = self._current_gate()
+        forward_error, _, _ = gate_relative_geometry(self.state, gate)
         self.current_gate_forward_error = forward_error
         self.gate_start_forward_error = max(0.5, forward_error)
+        self.gate_start_distance = max(
+            gate.radius_m,
+            float(np.linalg.norm(gate.center - self.state.pos)),
+        )
 
-    def _advance_gate(self) -> bool:
+    def _advance_gate(self, prev_forward_error: float) -> bool:
         """Check gate passage. Returns True if all gates cleared (success)."""
         assert self.current_task is not None and self.state is not None
-        if not gate_passed(self.state, self._current_gate(), self.current_task.gate_pass_margin_m):
+        if not gate_passed(
+            self.state,
+            self._current_gate(),
+            self.current_task.gate_pass_margin_m,
+            prev_forward_error,
+        ):
             return False
         self.gates_cleared += 1
         if self.gate_index + 1 < len(self.current_task.gates):
@@ -121,10 +135,15 @@ class DroneRaceEnv(gym.Env):
         total_gates = max(1, len(self.current_task.gates))
         fractional = 0.0
         if self.gates_cleared < total_gates:
-            fractional = max(0.0, min(1.0,
-                (self.gate_start_forward_error - self.current_gate_forward_error)
-                / max(self.gate_start_forward_error, 1e-3)
-            ))
+            assert self.state is not None
+            current_distance = float(np.linalg.norm(self._current_gate().center - self.state.pos))
+            fractional = max(
+                0.0,
+                min(
+                    1.0,
+                    1.0 - current_distance / max(self.gate_start_distance, 1e-3),
+                ),
+            )
         return min(1.0, (self.gates_cleared + fractional) / total_gates)
 
     def reset(
@@ -146,6 +165,7 @@ class DroneRaceEnv(gym.Env):
         self.gates_cleared = 0
         self.step_idx = 0
         self.last_reward_info = None
+        self.prev_action = np.zeros(4, dtype=np.float64)
 
         # Build qpos/qvel for MuJoCo reset
         quat = euler_to_quat_wxyz(self.current_task.spawn_euler)
@@ -172,6 +192,21 @@ class DroneRaceEnv(gym.Env):
         assert self.current_task is not None and self.state is not None
 
         action = np.clip(action.astype(np.float64), -1.0, 1.0)
+        guided_weight = float(np.clip(self.config.sim.guided_action_weight, 0.0, 1.0))
+        residual_scale = float(max(self.config.sim.residual_action_scale, 0.0))
+        if guided_weight > 0.0:
+            current_gate_body = body_frame_gate(self.state, self._current_gate())
+            next_gate = self._next_gate()
+            next_gate_body = (
+                body_frame_gate(self.state, next_gate)
+                if next_gate is not None
+                else None
+            )
+            base_action = guided_gate_action(self.state, current_gate_body, next_gate_body)
+            action = np.clip(guided_weight * base_action + residual_scale * action, -1.0, 1.0)
+        smoothing = float(np.clip(self.config.sim.action_smoothing, 0.0, 1.0))
+        action = self.prev_action + smoothing * (action - self.prev_action)
+        self.prev_action = action.copy()
 
         # Attitude controller -> rotor commands
         rotor_cmd = compute_rotor_commands(
@@ -206,7 +241,7 @@ class DroneRaceEnv(gym.Env):
         self.last_reward_info = reward_info
 
         # Check gate passage
-        success = self._advance_gate()
+        success = self._advance_gate(prev_forward_error)
 
         # Add gate passage bonus already handled in reward via gate_passage_reward
         truncated = self.step_idx + 1 >= self.episode_steps
@@ -250,6 +285,9 @@ class DroneRaceEnv(gym.Env):
             "reward_gate_passage": reward_info.gate_passage,
             "reward_progress": reward_info.progress,
             "reward_velocity_alignment": reward_info.velocity_alignment,
+            "reward_lateral_velocity_penalty": reward_info.lateral_velocity_penalty,
+            "reward_attitude_stability": reward_info.attitude_stability,
+            "reward_angular_rate_stability": reward_info.angular_rate_stability,
             "reward_control_effort": reward_info.control_effort,
         }
 

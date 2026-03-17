@@ -4,9 +4,10 @@ version = "0.1.0"
 description = "PPO drone racing with MuJoCo and Stable-Baselines3"
 requires-python = ">=3.12"
 dependencies = [
-    "mujoco>=3.3.0",
+    "mujoco-warp>=0.1.0",
     "stable-baselines3>=2.4.0",
     "gymnasium>=1.0.0",
+    "tensorboard>=2.18.0",
     "torch>=2.4.0",
     "numpy>=1.26.0",
 ]
@@ -26,3 +27,11 @@ package-dir = { "" = "src" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true

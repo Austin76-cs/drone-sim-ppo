@@ -31,6 +31,9 @@ class RewardInfo:
     gate_passage: float = 0.0
     progress: float = 0.0
     velocity_alignment: float = 0.0
+    lateral_velocity_penalty: float = 0.0
+    attitude_stability: float = 0.0
+    angular_rate_stability: float = 0.0
     time_penalty: float = 0.0
     collision_penalty: float = 0.0
     control_effort: float = 0.0

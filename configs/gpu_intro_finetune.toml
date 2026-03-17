@@ -1,10 +1,10 @@
 [runtime]
 seed = 7
-device = "cpu"
+device = "cuda"
 
 [sim]
 backend = "warp"
-backend_device = "cpu"
+backend_device = "cuda"
 sim_hz = 250
 policy_hz = 50
 episode_seconds = 30.0
@@ -12,6 +12,7 @@ model_xml_path = "assets/mjcf/quadrotor.xml"
 gravity = 9.81
 mass_jitter = 0.1
 thrust_noise_std = 0.01
+action_smoothing = 0.35
 
 [drone]
 mass_kg = 1.0
@@ -27,25 +28,27 @@ body_rate_kp = 0.45
 yaw_rate_kp = 0.30
 
 [ppo]
-learning_rate = 3e-4
-n_steps = 2048
-batch_size = 64
-n_epochs = 10
+learning_rate = 1e-4
+n_steps = 256
+batch_size = 1024
+n_epochs = 6
 gamma = 0.99
 gae_lambda = 0.95
-clip_range = 0.2
-ent_coef = 0.001
+clip_range = 0.15
+ent_coef = 0.0002
 net_arch = [256, 256]
-num_envs = 16
-total_timesteps = 10_000_000
+num_envs = 128
+total_timesteps = 1_310_720
 
 [reward]
 gate_proximity = 0.20
 gate_passage_bonus = 10.0
 progress = 1.0
 velocity_alignment = 0.50
+attitude_stability = -0.30
+angular_rate_stability = -0.25
 time_penalty = -0.005
-collision_penalty = -3.0
+collision_penalty = -10.0
 control_effort = -0.02
 alive_bonus = 0.0
 
@@ -56,13 +59,13 @@ curriculum_min_episodes = 6
 intro_threshold = 0.70
 slalom_threshold = 0.64
 sprint_threshold = 0.58
-gate_radius_m = 0.45
+gate_radius_m = 0.55
 gate_depth_m = 0.15
 gate_pass_margin_m = 0.12
 base_gate_spacing_m = 2.5
 
 [eval]
-n_episodes = 3
+n_episodes = 10
 deterministic = true
-eval_freq_timesteps = 100_000
-checkpoint_freq_timesteps = 100_000
+eval_freq_timesteps = 50_000
+checkpoint_freq_timesteps = 50_000

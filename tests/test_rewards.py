@@ -13,6 +13,7 @@ from dronesim.tasks.rewards import (
     gate_passed,
     gate_proximity_reward,
     gate_relative_geometry,
+    lateral_velocity_penalty_reward,
     progress_reward,
     velocity_alignment_reward,
 )
@@ -56,12 +57,17 @@ class TestGateGeometry(unittest.TestCase):
     def test_gate_passed(self):
         state = _make_state(pos=(3.05, 0.1, 1))
         gate = _make_gate(center=(3, 0, 1))
-        self.assertTrue(gate_passed(state, gate, 0.12))
+        self.assertTrue(gate_passed(state, gate, 0.12, prev_forward_error=0.5))
 
     def test_gate_not_passed(self):
         state = _make_state(pos=(1, 0, 1))
         gate = _make_gate(center=(3, 0, 1))
         self.assertFalse(gate_passed(state, gate, 0.12))
+
+    def test_gate_not_passed_without_crossing_event(self):
+        state = _make_state(pos=(3.4, 0.1, 1))
+        gate = _make_gate(center=(3, 0, 1))
+        self.assertFalse(gate_passed(state, gate, 0.12, prev_forward_error=-0.2))
 
 
 class TestRewardComponents(unittest.TestCase):
@@ -85,6 +91,12 @@ class TestRewardComponents(unittest.TestCase):
         r = progress_reward(4.0, 5.0, 0.45)
         self.assertEqual(r, 0.0)
 
+    def test_lateral_velocity_penalty_positive(self):
+        state = _make_state(pos=(2, 0, 1), vel=(0, 1.5, 0))
+        gate = _make_gate(center=(3, 0, 1))
+        r = lateral_velocity_penalty_reward(state, gate, 1.2)
+        self.assertGreater(r, 0.0)
+
     def test_control_effort(self):
         action = np.array([0.5, 0.5, 0.5, 0.5], dtype=np.float64)
         r = control_effort_reward(action)
@@ -102,6 +114,23 @@ class TestRewardComponents(unittest.TestCase):
         cfg = RewardConfig()
         info = compute_total_reward(state, action, gate, 2.0, cfg, False, 0.12)
         self.assertFalse(math.isnan(info.total))
+
+    def test_gate_passage_reward_requires_crossing(self):
+        state = _make_state(pos=(3.4, 0.1, 1))
+        gate = _make_gate(center=(3, 0, 1))
+        action = np.zeros(4, dtype=np.float64)
+        cfg = RewardConfig()
+        info = compute_total_reward(state, action, gate, -0.2, cfg, False, 0.12)
+        self.assertEqual(info.gate_passage, 0.0)
+
+    def test_instability_components_are_positive_when_tilted_and_spinning(self):
+        state = _make_state(pos=(2, 0.1, 1), euler=(0.4, -0.3, 0.0), omega=(3.0, 2.0, 1.0))
+        gate = _make_gate(center=(3, 0, 1))
+        action = np.zeros(4, dtype=np.float64)
+        cfg = RewardConfig(attitude_stability=-0.25, angular_rate_stability=-0.20)
+        info = compute_total_reward(state, action, gate, 2.0, cfg, False, 0.12)
+        self.assertGreater(info.attitude_stability, 0.0)
+        self.assertGreater(info.angular_rate_stability, 0.0)
 
 
 class TestBodyFrameGate(unittest.TestCase):

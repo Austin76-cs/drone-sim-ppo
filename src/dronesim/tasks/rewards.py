@@ -31,10 +31,17 @@ def gate_relative_geometry(
 
 
 def gate_passed(
-    state: DroneState, gate: GateSpec, gate_pass_margin_m: float
+    state: DroneState,
+    gate: GateSpec,
+    gate_pass_margin_m: float,
+    prev_forward_error: float | None = None,
 ) -> bool:
     forward_error, lateral_error, _ = gate_relative_geometry(state, gate)
-    return forward_error <= gate_pass_margin_m and lateral_error <= gate.radius_m
+    if forward_error > gate_pass_margin_m or lateral_error > gate.radius_m:
+        return False
+    if prev_forward_error is None:
+        return True
+    return prev_forward_error > gate_pass_margin_m
 
 
 def body_frame_gate(state: DroneState, gate: GateSpec) -> NDArray[np.float64]:
@@ -49,6 +56,10 @@ def body_frame_gate(state: DroneState, gate: GateSpec) -> NDArray[np.float64]:
 def gate_proximity_reward(state: DroneState, gate: GateSpec, scale: float) -> float:
     _, lateral_error, _ = gate_relative_geometry(state, gate)
     return _exp_score(lateral_error, scale)
+
+
+def centering_factor(state: DroneState, gate: GateSpec) -> float:
+    return gate_proximity_reward(state, gate, gate.radius_m)
 
 
 def gate_passage_reward(state: DroneState, gate: GateSpec, margin: float) -> float:
@@ -76,6 +87,21 @@ def velocity_alignment_reward(
     forward_vel = float(np.dot(state.vel, direction))
     # Positive when flying toward gate, clipped to [0, scale]
     return np.clip(forward_vel / max(scale, 1e-3), 0.0, 1.0)
+
+
+def lateral_velocity_penalty_reward(state: DroneState, gate: GateSpec, scale: float) -> float:
+    lateral_vel = state.vel - gate.normal * float(np.dot(state.vel, gate.normal))
+    return np.clip(float(np.linalg.norm(lateral_vel)) / max(scale, 1e-3), 0.0, 1.0)
+
+
+def attitude_stability_reward(state: DroneState) -> float:
+    tilt_mag = float(np.linalg.norm(state.euler[:2]))
+    return np.clip(tilt_mag / 0.6, 0.0, 1.0)
+
+
+def angular_rate_stability_reward(state: DroneState) -> float:
+    rate_mag = float(np.linalg.norm(state.omega))
+    return np.clip(rate_mag / 8.0, 0.0, 1.0)
 
 
 def time_penalty_reward() -> float:
@@ -107,9 +133,12 @@ def compute_total_reward(
     curr_forward_error, _, _ = gate_relative_geometry(state, gate)
 
     r_proximity = gate_proximity_reward(state, gate, gate.radius_m)
-    r_passage = gate_passage_reward(state, gate, gate_pass_margin)
+    r_passage = float(gate_passed(state, gate, gate_pass_margin, prev_forward_error))
     r_progress = progress_reward(prev_forward_error, curr_forward_error, gate.radius_m)
     r_align = velocity_alignment_reward(state, gate, 0.35)
+    r_lat_vel = lateral_velocity_penalty_reward(state, gate, 1.2)
+    r_attitude = attitude_stability_reward(state)
+    r_rates = angular_rate_stability_reward(state)
     r_time = time_penalty_reward()
     r_collision = collision_penalty_reward() if terminated else 0.0
     r_effort = control_effort_reward(action)
@@ -120,6 +149,9 @@ def compute_total_reward(
         + cfg.gate_passage_bonus * r_passage
         + cfg.progress * r_progress
         + cfg.velocity_alignment * r_align
+        + cfg.lateral_velocity_penalty * r_lat_vel
+        + cfg.attitude_stability * r_attitude
+        + cfg.angular_rate_stability * r_rates
         + cfg.time_penalty * r_time
         + cfg.collision_penalty * r_collision
         + cfg.control_effort * r_effort
@@ -132,6 +164,9 @@ def compute_total_reward(
         gate_passage=r_passage,
         progress=r_progress,
         velocity_alignment=r_align,
+        lateral_velocity_penalty=r_lat_vel,
+        attitude_stability=r_attitude,
+        angular_rate_stability=r_rates,
         time_penalty=r_time,
         collision_penalty=r_collision,
         control_effort=r_effort,
