@@ -67,7 +67,9 @@ class TaskConfig:
     intro_threshold: float = 0.70
     slalom_threshold: float = 0.64
     sprint_threshold: float = 0.58
+    competition_threshold: float = 0.50
     gate_radius_m: float = 0.45
+    sprint_gate_radius_m: float = 0.75
     gate_depth_m: float = 0.15
     gate_pass_margin_m: float = 0.12
     base_gate_spacing_m: float = 2.5

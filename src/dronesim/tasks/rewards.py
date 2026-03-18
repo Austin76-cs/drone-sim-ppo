@@ -31,9 +31,32 @@ def gate_relative_geometry(
 
 
 def gate_passed(
-    state: DroneState, gate: GateSpec, gate_pass_margin_m: float
+    state: DroneState, gate: GateSpec, gate_pass_margin_m: float,
+    prev_pos: NDArray[np.float64] | None = None,
 ) -> bool:
     forward_error, lateral_error, _ = gate_relative_geometry(state, gate)
+
+    if prev_pos is not None:
+        # Ray-plane crossing check: did the drone cross the gate plane
+        # between prev_pos and current pos?
+        prev_rel = gate.center - prev_pos
+        prev_fwd = float(np.dot(prev_rel, gate.normal))
+        # Crossed if prev was in front (positive) and now behind/at plane
+        if prev_fwd > 0.0 and forward_error <= gate_pass_margin_m:
+            # Interpolate to find crossing point and check lateral distance
+            total = prev_fwd + abs(forward_error)
+            if total > 1e-6:
+                t = prev_fwd / total
+                cross_pos = prev_pos + t * (state.pos - prev_pos)
+                cross_lateral = float(np.linalg.norm(
+                    (gate.center - cross_pos)
+                    - gate.normal * float(np.dot(gate.center - cross_pos, gate.normal))
+                ))
+                return cross_lateral <= gate.radius_m
+            return lateral_error <= gate.radius_m
+        return False
+
+    # Fallback: simple proximity check (no previous position available)
     return forward_error <= gate_pass_margin_m and lateral_error <= gate.radius_m
 
 

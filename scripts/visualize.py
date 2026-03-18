@@ -94,8 +94,8 @@ def main() -> None:
     parser.add_argument("--config", type=str, default="configs/default.toml")
     parser.add_argument("--episodes", type=int, default=5)
     parser.add_argument("--speed", type=float, default=1.0, help="Playback speed multiplier")
-    parser.add_argument("--stage", type=int, default=None, choices=[0, 1, 2],
-                        help="Force curriculum stage: 0=INTRO, 1=OFFSET, 2=SLALOM")
+    parser.add_argument("--stage", type=int, default=None, choices=[0, 1, 2, 3],
+                        help="Force curriculum stage: 0=INTRO, 1=OFFSET, 2=SLALOM, 3=SPRINT")
     args = parser.parse_args()
 
     if not HAS_VIEWER:

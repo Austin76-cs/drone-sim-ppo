@@ -27,16 +27,40 @@ def make_env(config, stage_controller, seed):
     return _init
 
 
+def _make_eval_vec_env(config, stage_controller, normalize_path):
+    eval_venv = DummyVecEnv([make_env(config, stage_controller, config.seed + 1000)])
+    if normalize_path:
+        eval_venv = VecNormalize.load(normalize_path, eval_venv)
+        eval_venv.training = False
+        eval_venv.norm_reward = False
+    else:
+        eval_venv = VecNormalize(
+            eval_venv,
+            norm_obs=True,
+            norm_reward=False,
+            clip_obs=10.0,
+        )
+    return eval_venv
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train PPO drone racing agent")
     parser.add_argument("--config", type=str, default="configs/default.toml")
     parser.add_argument("--resume", type=str, default=None, help="Path to checkpoint .zip")
+    parser.add_argument("--normalize", type=str, default=None,
+                        help="Path to VecNormalize .pkl to restore obs/reward stats")
     parser.add_argument("--run-name", type=str, default="ppo_drone")
     parser.add_argument("--debug", action="store_true", help="Use DummyVecEnv, 1 env")
+    parser.add_argument("--stage", type=int, default=None, choices=[0, 1, 2, 3],
+                        help="Force starting curriculum stage: 0=INTRO, 1=OFFSET, 2=SLALOM, 3=SPRINT")
     args = parser.parse_args()
 
     config = load_config(Path(args.config))
     stage_controller = StageController(config.task)
+    if args.stage is not None:
+        from dronesim.tasks.curriculum import CurriculumStage
+        stage_controller.force_stage(CurriculumStage(args.stage))
+        print(f"Forced starting stage: {CurriculumStage(args.stage).name}")
 
     num_envs = 1 if args.debug else config.ppo.num_envs
     env_fns = [make_env(config, stage_controller, config.seed + i) for i in range(num_envs)]
@@ -46,18 +70,24 @@ def main() -> None:
     else:
         vec_env = SubprocVecEnv(env_fns)
 
-    vec_env = VecNormalize(
-        vec_env,
-        norm_obs=True,
-        norm_reward=True,
-        clip_obs=10.0,
-        clip_reward=10.0,
-    )
+    if args.resume and args.normalize:
+        vec_env = VecNormalize.load(args.normalize, vec_env)
+        vec_env.training = True
+        vec_env.norm_reward = True
+        print(f"Loaded normalization stats from {args.normalize}")
+    else:
+        vec_env = VecNormalize(
+            vec_env,
+            norm_obs=True,
+            norm_reward=True,
+            clip_obs=10.0,
+            clip_reward=10.0,
+        )
 
     tensorboard_log = f"runs/{args.run_name}"
 
     if args.resume:
-        model = PPO.load(args.resume, env=vec_env, tensorboard_log=tensorboard_log)
+        model = PPO.load(args.resume, env=vec_env, tensorboard_log=tensorboard_log, device="cuda")
         print(f"Resumed from {args.resume}")
     else:
         model = PPO(
@@ -73,6 +103,7 @@ def main() -> None:
             ent_coef=config.ppo.ent_coef,
             policy_kwargs={"net_arch": config.ppo.net_arch},
             tensorboard_log=tensorboard_log,
+            device="cuda",
             verbose=1,
         )
 
@@ -84,12 +115,7 @@ def main() -> None:
             name_prefix="ppo_drone",
         ),
         EvalCallback(
-            VecNormalize(
-                DummyVecEnv([make_env(config, stage_controller, config.seed + 1000)]),
-                norm_obs=True,
-                norm_reward=False,
-                clip_obs=10.0,
-            ),
+            _make_eval_vec_env(config, stage_controller, args.normalize),
             best_model_save_path=checkpoint_dir,
             log_path=checkpoint_dir,
             eval_freq=max(1, 25_000 // num_envs),

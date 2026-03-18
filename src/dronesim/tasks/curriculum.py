@@ -15,6 +15,7 @@ class CurriculumStage(IntEnum):
     INTRO = 0
     OFFSET = 1
     SLALOM = 2
+    SPRINT = 3
 
 
 @dataclass(slots=True, frozen=True)
@@ -94,19 +95,36 @@ def _get_stage_spec(stage: CurriculumStage, config: TaskConfig) -> StageSpec:
             max_distance_m=4.5,
             randomization_scale=0.65,
         )
+    if stage == CurriculumStage.SLALOM:
+        return StageSpec(
+            mastery_threshold=config.sprint_threshold,
+            max_steps_scale=1.00,
+            num_gates=6,
+            spacing_m=config.base_gate_spacing_m * 1.10,
+            lateral_span_m=1.2,
+            vertical_span_m=0.35,
+            spawn_backtrack_m=2.3,
+            spawn_xy_jitter_m=0.20,
+            spawn_tilt_rad=0.28,
+            spawn_speed_m_s=0.30,
+            spawn_omega_rad_s=1.2,
+            max_distance_m=5.5,
+            randomization_scale=1.00,
+        )
+    # SPRINT: competition-realistic stage modeled after A2RL/AI Grand Prix
     return StageSpec(
-        mastery_threshold=config.sprint_threshold,
+        mastery_threshold=config.competition_threshold,
         max_steps_scale=1.00,
-        num_gates=6,
-        spacing_m=config.base_gate_spacing_m * 1.10,
-        lateral_span_m=1.2,
-        vertical_span_m=0.35,
-        spawn_backtrack_m=2.3,
-        spawn_xy_jitter_m=0.20,
-        spawn_tilt_rad=0.28,
-        spawn_speed_m_s=0.30,
-        spawn_omega_rad_s=1.2,
-        max_distance_m=5.5,
+        num_gates=10,
+        spacing_m=config.base_gate_spacing_m * 2.0,
+        lateral_span_m=2.5,
+        vertical_span_m=0.8,
+        spawn_backtrack_m=3.0,
+        spawn_xy_jitter_m=0.25,
+        spawn_tilt_rad=0.30,
+        spawn_speed_m_s=0.40,
+        spawn_omega_rad_s=1.5,
+        max_distance_m=8.0,
         randomization_scale=1.00,
     )
 
@@ -128,6 +146,20 @@ def generate_gate_course(
             offset_y = 0.0
         elif stage == CurriculumStage.OFFSET:
             offset_y = rng.uniform(-spec.lateral_span_m, spec.lateral_span_m)
+        elif stage == CurriculumStage.SPRINT:
+            # Competition-style: mix of slalom, random offsets, and occasional
+            # double-gates (two gates close together)
+            if gate_idx % 3 == 0:
+                # Slalom-style alternating
+                sign = -1.0 if gate_idx % 2 == 0 else 1.0
+                offset_y = sign * rng.uniform(0.8, spec.lateral_span_m)
+            else:
+                # Random placement across the full lateral range
+                offset_y = rng.uniform(-spec.lateral_span_m, spec.lateral_span_m)
+            # Ensure meaningful lateral change between consecutive gates
+            if abs(offset_y - prev_offset_y) < 0.35:
+                offset_y = -prev_offset_y * 0.8 + rng.uniform(-0.3, 0.3)
+                offset_y = np.clip(offset_y, -spec.lateral_span_m, spec.lateral_span_m)
         else:
             sign = -1.0 if gate_idx % 2 == 0 else 1.0
             offset_y = sign * rng.uniform(0.45, spec.lateral_span_m)
@@ -136,7 +168,19 @@ def generate_gate_course(
 
         offset_z = 1.0 + rng.uniform(-spec.vertical_span_m, spec.vertical_span_m)
         center = np.array([x_position, offset_y, offset_z], dtype=np.float64)
-        normal = np.array([1.0, 0.0, 0.0], dtype=np.float64)
+
+        if stage == CurriculumStage.SPRINT and gate_idx > 0:
+            # Angled normals: gate faces the approach direction from previous gate
+            approach = center - gates[-1].center
+            approach[2] = 0.0  # keep normal horizontal
+            norm = np.linalg.norm(approach)
+            if norm > 1e-6:
+                normal = approach / norm
+            else:
+                normal = np.array([1.0, 0.0, 0.0], dtype=np.float64)
+        else:
+            normal = np.array([1.0, 0.0, 0.0], dtype=np.float64)
+
         gates.append(GateSpec(center=center, normal=normal, radius_m=gate_radius_m, depth_m=gate_depth_m))
         x_position += spec.spacing_m
         prev_offset_y = offset_y
@@ -164,9 +208,14 @@ class StageController:
         spec = _get_stage_spec(self.stage, self.config)
         max_steps = max(1, int(base_episode_steps * spec.max_steps_scale))
 
+        gate_radius = (
+            self.config.sprint_gate_radius_m
+            if self.stage == CurriculumStage.SPRINT
+            else self.config.gate_radius_m
+        )
         gates = generate_gate_course(
             spec, self.stage, rng,
-            self.config.gate_radius_m, self.config.gate_depth_m,
+            gate_radius, self.config.gate_depth_m,
         )
 
         first_gate = gates[0].center
@@ -211,7 +260,7 @@ class StageController:
         history = self._history[summary.stage]
         history.append(summary.score)
 
-        if summary.stage != self.stage or self.stage == CurriculumStage.SLALOM:
+        if summary.stage != self.stage or self.stage == CurriculumStage.SPRINT:
             return
 
         min_episodes = max(1, self.config.curriculum_min_episodes)

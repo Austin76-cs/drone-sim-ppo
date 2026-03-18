@@ -34,7 +34,7 @@ gae_lambda = 0.95
 clip_range = 0.2
 ent_coef = 0.001
 net_arch = [256, 256]
-num_envs = 8
+num_envs = 16
 total_timesteps = 3_000_000
 
 [reward]
@@ -54,7 +54,9 @@ curriculum_min_episodes = 6
 intro_threshold = 0.70
 slalom_threshold = 0.64
 sprint_threshold = 0.58
+competition_threshold = 0.50
 gate_radius_m = 0.45
+sprint_gate_radius_m = 0.75
 gate_depth_m = 0.15
 gate_pass_margin_m = 0.12
 base_gate_spacing_m = 2.5

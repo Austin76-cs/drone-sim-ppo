@@ -66,6 +66,7 @@ class DroneRaceEnv(gym.Env):
         self.current_gate_forward_error = 0.0
         self.gate_start_forward_error = 1.0
         self.last_reward_info: RewardInfo | None = None
+        self.prev_pos: NDArray[np.float64] | None = None
 
     def _current_gate(self) -> GateSpec:
         assert self.current_task is not None
@@ -107,7 +108,7 @@ class DroneRaceEnv(gym.Env):
     def _advance_gate(self) -> bool:
         """Check gate passage. Returns True if all gates cleared (success)."""
         assert self.current_task is not None and self.state is not None
-        if not gate_passed(self.state, self._current_gate(), self.current_task.gate_pass_margin_m):
+        if not gate_passed(self.state, self._current_gate(), self.current_task.gate_pass_margin_m, self.prev_pos):
             return False
         self.gates_cleared += 1
         if self.gate_index + 1 < len(self.current_task.gates):
@@ -158,6 +159,7 @@ class DroneRaceEnv(gym.Env):
 
         self.sim.apply_randomization(self.current_task.randomization_scale, self.rng)
         self.state = self.sim.reset(qpos, qvel)
+        self.prev_pos = self.state.pos.copy()
         self._set_gate_progress_reference()
 
         obs = self._build_obs()
@@ -185,6 +187,7 @@ class DroneRaceEnv(gym.Env):
 
         # Step physics
         prev_forward_error = self.current_gate_forward_error
+        self.prev_pos = self.state.pos.copy()
         self.state = self.sim.step(rotor_cmd)
 
         # Update forward error
