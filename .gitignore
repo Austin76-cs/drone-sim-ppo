@@ -9,3 +9,4 @@ runs/
 checkpoints/
 *.zip
 .ruff_cache/
+data/

@@ -53,10 +53,13 @@ class RewardConfig:
     gate_passage_bonus: float = 5.0
     progress: float = 0.40
     velocity_alignment: float = 0.20
+    forward_speed: float = 0.30
     time_penalty: float = -0.002
     collision_penalty: float = -5.0
     control_effort: float = -0.05
     alive_bonus: float = 0.05
+    gate_miss_penalty: float = 0.0
+    approach_angle: float = 0.0
 
 
 @dataclass(slots=True)

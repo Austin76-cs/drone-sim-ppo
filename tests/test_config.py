@@ -15,7 +15,7 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(cfg.drone.mass_kg, 1.0)
         self.assertEqual(cfg.ppo.batch_size, 64)
         self.assertEqual(cfg.reward.gate_passage_bonus, 10.0)
-        self.assertEqual(cfg.task.gate_radius_m, 0.45)
+        self.assertEqual(cfg.task.gate_radius_m, 0.40)
 
     def test_decimation(self):
         cfg = load_config(Path("configs/default.toml"))

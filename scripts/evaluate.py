@@ -23,12 +23,19 @@ def main() -> None:
     parser.add_argument("--config", type=str, default="configs/default.toml")
     parser.add_argument("--episodes", type=int, default=20)
     parser.add_argument("--deterministic", action="store_true", default=True)
+    parser.add_argument("--stage", type=int, default=None, choices=[0, 1, 2, 3],
+                        help="Force a specific curriculum stage (0=INTRO, 1=OFFSET, 2=SLALOM, 3=SPRINT)")
     args = parser.parse_args()
 
     config = load_config(Path(args.config))
 
+    from dronesim.tasks.curriculum import CurriculumStage, StageController
+
     def make_env():
-        return DroneRaceEnv(config)
+        env = DroneRaceEnv(config)
+        if args.stage is not None:
+            env.stage_controller.stage = CurriculumStage(args.stage)
+        return env
 
     vec_env = DummyVecEnv([make_env])
     if args.normalize:

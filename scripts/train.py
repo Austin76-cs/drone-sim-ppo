@@ -87,7 +87,7 @@ def main() -> None:
     tensorboard_log = f"runs/{args.run_name}"
 
     if args.resume:
-        model = PPO.load(args.resume, env=vec_env, tensorboard_log=tensorboard_log, device="cuda")
+        model = PPO.load(args.resume, env=vec_env, tensorboard_log=tensorboard_log, device=config.device)
         print(f"Resumed from {args.resume}")
     else:
         model = PPO(
@@ -103,7 +103,7 @@ def main() -> None:
             ent_coef=config.ppo.ent_coef,
             policy_kwargs={"net_arch": config.ppo.net_arch},
             tensorboard_log=tensorboard_log,
-            device="cuda",
+            device=config.device,
             verbose=1,
         )
 

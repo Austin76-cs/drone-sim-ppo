@@ -74,8 +74,40 @@ def gate_proximity_reward(state: DroneState, gate: GateSpec, scale: float) -> fl
     return _exp_score(lateral_error, scale)
 
 
-def gate_passage_reward(state: DroneState, gate: GateSpec, margin: float) -> float:
-    if gate_passed(state, gate, margin):
+def gate_missed(
+    state: DroneState,
+    gate: GateSpec,
+    gate_pass_margin: float,
+    prev_pos: NDArray[np.float64] | None = None,
+) -> bool:
+    """Returns True if the drone crossed the gate plane outside the gate radius (a miss)."""
+    if prev_pos is None:
+        return False
+    forward_error, _, _ = gate_relative_geometry(state, gate)
+    prev_rel = gate.center - prev_pos
+    prev_fwd = float(np.dot(prev_rel, gate.normal))
+    if prev_fwd > 0.0 and forward_error <= gate_pass_margin:
+        total = prev_fwd + abs(forward_error)
+        if total > 1e-6:
+            t = prev_fwd / total
+            cross_pos = prev_pos + t * (state.pos - prev_pos)
+            cross_lateral = float(np.linalg.norm(
+                (gate.center - cross_pos)
+                - gate.normal * float(np.dot(gate.center - cross_pos, gate.normal))
+            ))
+            return cross_lateral > gate.radius_m
+        _, lateral_error, _ = gate_relative_geometry(state, gate)
+        return lateral_error > gate.radius_m
+    return False
+
+
+def gate_passage_reward(
+    state: DroneState,
+    gate: GateSpec,
+    margin: float,
+    prev_pos: NDArray[np.float64] | None = None,
+) -> float:
+    if gate_passed(state, gate, margin, prev_pos):
         return 1.0
     return 0.0
 
@@ -113,6 +145,21 @@ def control_effort_reward(action: NDArray[np.float64]) -> float:
     return float(np.linalg.norm(action) / math.sqrt(max(len(action), 1)))
 
 
+def approach_angle_reward(state: DroneState, gate: GateSpec) -> float:
+    """Reward for velocity aligned with gate normal (perpendicular approach)."""
+    speed = float(np.linalg.norm(state.vel))
+    if speed < 1e-4:
+        return 0.0
+    vel_norm = state.vel / speed
+    return float(np.clip(np.dot(vel_norm, gate.normal), 0.0, 1.0))
+
+
+def forward_speed_reward(state: DroneState, max_speed: float = 5.0) -> float:
+    """Reward for raw flight speed — incentivizes actually moving fast."""
+    speed = float(np.linalg.norm(state.vel))
+    return min(1.0, speed / max(max_speed, 1e-3))
+
+
 def alive_bonus_reward() -> float:
     return 1.0
 
@@ -125,14 +172,18 @@ def compute_total_reward(
     cfg: RewardConfig,
     terminated: bool,
     gate_pass_margin: float,
+    prev_pos: NDArray[np.float64] | None = None,
 ) -> RewardInfo:
     """Compute weighted sum of all reward components."""
     curr_forward_error, _, _ = gate_relative_geometry(state, gate)
 
     r_proximity = gate_proximity_reward(state, gate, gate.radius_m)
-    r_passage = gate_passage_reward(state, gate, gate_pass_margin)
+    r_passage = gate_passage_reward(state, gate, gate_pass_margin, prev_pos)
+    r_miss = gate_missed(state, gate, gate_pass_margin, prev_pos)
     r_progress = progress_reward(prev_forward_error, curr_forward_error, gate.radius_m)
-    r_align = velocity_alignment_reward(state, gate, 0.35)
+    r_align = velocity_alignment_reward(state, gate, 3.0)
+    r_approach = approach_angle_reward(state, gate)
+    r_speed = forward_speed_reward(state)
     r_time = time_penalty_reward()
     r_collision = collision_penalty_reward() if terminated else 0.0
     r_effort = control_effort_reward(action)
@@ -141,8 +192,11 @@ def compute_total_reward(
     total = (
         cfg.gate_proximity * r_proximity
         + cfg.gate_passage_bonus * r_passage
+        + cfg.gate_miss_penalty * float(r_miss)
         + cfg.progress * r_progress
         + cfg.velocity_alignment * r_align
+        + cfg.approach_angle * r_approach
+        + cfg.forward_speed * r_speed
         + cfg.time_penalty * r_time
         + cfg.collision_penalty * r_collision
         + cfg.control_effort * r_effort
@@ -155,8 +209,11 @@ def compute_total_reward(
         gate_passage=r_passage,
         progress=r_progress,
         velocity_alignment=r_align,
+        approach_angle=r_approach,
+        forward_speed=r_speed,
         time_penalty=r_time,
         collision_penalty=r_collision,
         control_effort=r_effort,
         alive_bonus=r_alive,
+        gate_miss=float(r_miss),
     )

@@ -18,6 +18,110 @@
     <geom name="ground" type="plane" size="4 4 0.1" rgba="0.1 0.13 0.16 1"/>
     <camera name="track" mode="trackcom" pos="0 -2.0 1.2" xyaxes="1 0 0 0 0 1"/>
 
+    <!-- Gate ring markers: 10 mocap bodies, each a ring of 8 capsule segments.
+         Ring lies in local Y-Z plane (X=0). Positioned each episode via mocap_pos/quat.
+         Hidden initially at x=100. contype/conaffinity=0 so no physics interaction. -->
+    <body name="gate_0" mocap="true" pos="100 0 0">
+      <geom type="capsule" fromto="0 0.4000 0.0000 0 0.2828 0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.2828 0.2828 0 0.0000 0.4000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.0000 0.4000 0 -0.2828 0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 -0.2828 0.2828 0 -0.4000 0.0000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 -0.4000 0.0000 0 -0.2828 -0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 -0.2828 -0.2828 0 0.0000 -0.4000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.0000 -0.4000 0 0.2828 -0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.2828 -0.2828 0 0.4000 0.0000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+    </body>
+    <body name="gate_1" mocap="true" pos="100 0 0">
+      <geom type="capsule" fromto="0 0.4000 0.0000 0 0.2828 0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.2828 0.2828 0 0.0000 0.4000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.0000 0.4000 0 -0.2828 0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 -0.2828 0.2828 0 -0.4000 0.0000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 -0.4000 0.0000 0 -0.2828 -0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 -0.2828 -0.2828 0 0.0000 -0.4000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.0000 -0.4000 0 0.2828 -0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.2828 -0.2828 0 0.4000 0.0000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+    </body>
+    <body name="gate_2" mocap="true" pos="100 0 0">
+      <geom type="capsule" fromto="0 0.4000 0.0000 0 0.2828 0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.2828 0.2828 0 0.0000 0.4000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.0000 0.4000 0 -0.2828 0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 -0.2828 0.2828 0 -0.4000 0.0000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 -0.4000 0.0000 0 -0.2828 -0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 -0.2828 -0.2828 0 0.0000 -0.4000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.0000 -0.4000 0 0.2828 -0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.2828 -0.2828 0 0.4000 0.0000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+    </body>
+    <body name="gate_3" mocap="true" pos="100 0 0">
+      <geom type="capsule" fromto="0 0.4000 0.0000 0 0.2828 0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.2828 0.2828 0 0.0000 0.4000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.0000 0.4000 0 -0.2828 0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 -0.2828 0.2828 0 -0.4000 0.0000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 -0.4000 0.0000 0 -0.2828 -0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 -0.2828 -0.2828 0 0.0000 -0.4000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.0000 -0.4000 0 0.2828 -0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.2828 -0.2828 0 0.4000 0.0000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+    </body>
+    <body name="gate_4" mocap="true" pos="100 0 0">
+      <geom type="capsule" fromto="0 0.4000 0.0000 0 0.2828 0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.2828 0.2828 0 0.0000 0.4000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.0000 0.4000 0 -0.2828 0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 -0.2828 0.2828 0 -0.4000 0.0000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 -0.4000 0.0000 0 -0.2828 -0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 -0.2828 -0.2828 0 0.0000 -0.4000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.0000 -0.4000 0 0.2828 -0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.2828 -0.2828 0 0.4000 0.0000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+    </body>
+    <body name="gate_5" mocap="true" pos="100 0 0">
+      <geom type="capsule" fromto="0 0.4000 0.0000 0 0.2828 0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.2828 0.2828 0 0.0000 0.4000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.0000 0.4000 0 -0.2828 0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 -0.2828 0.2828 0 -0.4000 0.0000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 -0.4000 0.0000 0 -0.2828 -0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 -0.2828 -0.2828 0 0.0000 -0.4000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.0000 -0.4000 0 0.2828 -0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.2828 -0.2828 0 0.4000 0.0000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+    </body>
+    <body name="gate_6" mocap="true" pos="100 0 0">
+      <geom type="capsule" fromto="0 0.4000 0.0000 0 0.2828 0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.2828 0.2828 0 0.0000 0.4000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.0000 0.4000 0 -0.2828 0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 -0.2828 0.2828 0 -0.4000 0.0000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 -0.4000 0.0000 0 -0.2828 -0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 -0.2828 -0.2828 0 0.0000 -0.4000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.0000 -0.4000 0 0.2828 -0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.2828 -0.2828 0 0.4000 0.0000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+    </body>
+    <body name="gate_7" mocap="true" pos="100 0 0">
+      <geom type="capsule" fromto="0 0.4000 0.0000 0 0.2828 0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.2828 0.2828 0 0.0000 0.4000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.0000 0.4000 0 -0.2828 0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 -0.2828 0.2828 0 -0.4000 0.0000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 -0.4000 0.0000 0 -0.2828 -0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 -0.2828 -0.2828 0 0.0000 -0.4000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.0000 -0.4000 0 0.2828 -0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.2828 -0.2828 0 0.4000 0.0000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+    </body>
+    <body name="gate_8" mocap="true" pos="100 0 0">
+      <geom type="capsule" fromto="0 0.4000 0.0000 0 0.2828 0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.2828 0.2828 0 0.0000 0.4000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.0000 0.4000 0 -0.2828 0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 -0.2828 0.2828 0 -0.4000 0.0000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 -0.4000 0.0000 0 -0.2828 -0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 -0.2828 -0.2828 0 0.0000 -0.4000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.0000 -0.4000 0 0.2828 -0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.2828 -0.2828 0 0.4000 0.0000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+    </body>
+    <body name="gate_9" mocap="true" pos="100 0 0">
+      <geom type="capsule" fromto="0 0.4000 0.0000 0 0.2828 0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.2828 0.2828 0 0.0000 0.4000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.0000 0.4000 0 -0.2828 0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 -0.2828 0.2828 0 -0.4000 0.0000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 -0.4000 0.0000 0 -0.2828 -0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 -0.2828 -0.2828 0 0.0000 -0.4000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.0000 -0.4000 0 0.2828 -0.2828" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0.2828 -0.2828 0 0.4000 0.0000" size="0.025" rgba="1.0 0.4 0.0 1" contype="0" conaffinity="0"/>
+    </body>
+
     <body name="drone" pos="0 0 0.35">
       <freejoint name="drone_free"/>
       <inertial pos="0 0 0" mass="1.0" diaginertia="0.01 0.01 0.02"/>
@@ -38,6 +142,9 @@
       <site name="motor_3" pos="-0.11 -0.11 0"/>
       <site name="motor_4" pos="0.11 -0.11 0"/>
       <site name="imu" pos="0 0 0"/>
+      <!-- Forward-facing camera for Phase 2 perception.
+           xyaxes: camera-x = body -Y (right), camera-y = body +Z (up) → looks along body +X (forward). -->
+      <camera name="drone_cam" pos="0.05 0 0" xyaxes="0 -1 0 0 0 1" fovy="80"/>
     </body>
   </worldbody>
 

@@ -31,10 +31,13 @@ class RewardInfo:
     gate_passage: float = 0.0
     progress: float = 0.0
     velocity_alignment: float = 0.0
+    forward_speed: float = 0.0
     time_penalty: float = 0.0
     collision_penalty: float = 0.0
     control_effort: float = 0.0
     alive_bonus: float = 0.0
+    gate_miss: float = 0.0
+    approach_angle: float = 0.0
 
 
 @dataclass(slots=True)

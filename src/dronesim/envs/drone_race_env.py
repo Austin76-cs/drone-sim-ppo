@@ -18,6 +18,7 @@ from dronesim.tasks.curriculum import (
 from dronesim.tasks.rewards import (
     body_frame_gate,
     compute_total_reward,
+    gate_missed,
     gate_passed,
     gate_relative_geometry,
 )
@@ -67,6 +68,7 @@ class DroneRaceEnv(gym.Env):
         self.gate_start_forward_error = 1.0
         self.last_reward_info: RewardInfo | None = None
         self.prev_pos: NDArray[np.float64] | None = None
+        self.miss_count = 0
 
     def _current_gate(self) -> GateSpec:
         assert self.current_task is not None
@@ -83,6 +85,7 @@ class DroneRaceEnv(gym.Env):
     def _build_obs(self) -> NDArray[np.float32]:
         assert self.state is not None
         cur_gate_body = body_frame_gate(self.state, self._current_gate())
+
         next_gate = self._next_gate()
         if next_gate is not None:
             next_gate_body = body_frame_gate(self.state, next_gate)
@@ -146,6 +149,7 @@ class DroneRaceEnv(gym.Env):
         self.gate_index = 0
         self.gates_cleared = 0
         self.step_idx = 0
+        self.miss_count = 0
         self.last_reward_info = None
 
         # Build qpos/qvel for MuJoCo reset
@@ -199,19 +203,27 @@ class DroneRaceEnv(gym.Env):
         terminated, crash_type = compute_termination(
             self.state, self._current_gate(), self.current_task.max_distance_m,
         )
-
-        # Compute reward
+        # Compute reward (includes gate_miss_penalty if drone crossed gate plane off-center)
         reward_info = compute_total_reward(
             self.state, action, self._current_gate(),
             prev_forward_error, self.config.reward,
             terminated, self.current_task.gate_pass_margin_m,
+            self.prev_pos,
         )
         self.last_reward_info = reward_info
 
         # Check gate passage
         success = self._advance_gate()
 
-        # Add gate passage bonus already handled in reward via gate_passage_reward
+        # Soft miss termination: allow 1 miss per episode (grace), terminate on 2nd.
+        # Backtracking is risky — retrying the same gate is the drone's 2nd miss attempt.
+        if not success and reward_info.gate_miss > 0.5:
+            self.miss_count += 1
+            if not terminated and self.miss_count >= 2:
+                terminated = True
+                crash_type = "miss_limit"
+
+        # Gate passage bonus handled in reward via gate_passage_reward
         truncated = self.step_idx + 1 >= self.episode_steps
         self.step_idx += 1
 
@@ -226,8 +238,8 @@ class DroneRaceEnv(gym.Env):
         if done:
             completion = self._completion()
             score = (
-                0.60 * completion
-                + 0.25 * float(success)
+                0.40 * completion
+                + 0.45 * float(success)
                 + 0.15 * min(1.0, self.step_idx / max(1.0, float(self.episode_steps)))
             )
             summary = EpisodeSummary(
@@ -253,6 +265,7 @@ class DroneRaceEnv(gym.Env):
             "reward_gate_passage": reward_info.gate_passage,
             "reward_progress": reward_info.progress,
             "reward_velocity_alignment": reward_info.velocity_alignment,
+            "reward_forward_speed": reward_info.forward_speed,
             "reward_control_effort": reward_info.control_effort,
         }
 
