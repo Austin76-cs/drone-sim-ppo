@@ -5,6 +5,13 @@ Usage:
         --data data/perception_train.h5 \\
         --run-name unet_v1 \\
         --epochs 50 --batch-size 64
+
+    # Resume from a checkpoint:
+    python scripts/train_perception.py \\
+        --data data/perception_train.h5 \\
+        --run-name unet_v1 \\
+        --epochs 50 \\
+        --resume checkpoints/unet_v1/best_model.pt
 """
 from __future__ import annotations
 
@@ -47,19 +54,39 @@ def train(args: argparse.Namespace) -> None:
     print(f"GateUNet: {n_params:,} parameters")
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=args.epochs, eta_min=1e-5
-    )
     loss_fn = nn.MSELoss()
 
     ckpt_dir = Path("checkpoints") / args.run_name
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     writer = SummaryWriter(log_dir=f"runs/{args.run_name}")
 
+    # Resume from checkpoint if requested
+    start_epoch = 0
     best_val_loss = float("inf")
+    if args.resume:
+        ckpt = torch.load(args.resume, map_location=device)
+        model.load_state_dict(ckpt["model"])
+        if "optimizer" in ckpt:
+            optimizer.load_state_dict(ckpt["optimizer"])
+        start_epoch = ckpt["epoch"]  # last completed epoch
+        best_val_loss = ckpt.get("val_loss", float("inf"))
+        print(f"Resumed from {args.resume}  (epoch {start_epoch}, val={best_val_loss:.5f})")
+
+    # CosineAnnealingLR: pass last_epoch so the LR schedule is correct when resuming.
+    # PyTorch requires initial_lr to be set in param_groups before last_epoch >= 0.
+    for pg in optimizer.param_groups:
+        pg.setdefault("initial_lr", args.lr)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=args.epochs, eta_min=1e-5, last_epoch=start_epoch - 1
+    )
+    if args.resume:
+        ckpt = torch.load(args.resume, map_location=device)
+        if "scheduler" in ckpt:
+            scheduler.load_state_dict(ckpt["scheduler"])
+
     global_step = 0
 
-    for epoch in range(1, args.epochs + 1):
+    for epoch in range(start_epoch + 1, args.epochs + 1):
         # --- Train ---
         model.train()
         train_loss = 0.0
@@ -108,14 +135,26 @@ def train(args: argparse.Namespace) -> None:
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             torch.save(
-                {"epoch": epoch, "model": model.state_dict(), "val_loss": val_loss},
+                {
+                    "epoch": epoch,
+                    "model": model.state_dict(),
+                    "optimizer": optimizer.state_dict(),
+                    "scheduler": scheduler.state_dict(),
+                    "val_loss": val_loss,
+                },
                 ckpt_dir / "best_model.pt",
             )
 
-        # Periodic checkpoint
+        # Periodic checkpoint (also resumable)
         if epoch % 10 == 0:
             torch.save(
-                {"epoch": epoch, "model": model.state_dict(), "val_loss": val_loss},
+                {
+                    "epoch": epoch,
+                    "model": model.state_dict(),
+                    "optimizer": optimizer.state_dict(),
+                    "scheduler": scheduler.state_dict(),
+                    "val_loss": val_loss,
+                },
                 ckpt_dir / f"epoch_{epoch:03d}.pt",
             )
 
@@ -132,6 +171,7 @@ def main() -> None:
     parser.add_argument("--lr",         type=float, default=3e-4)
     parser.add_argument("--workers",    type=int,   default=0)
     parser.add_argument("--device",     default="cuda")
+    parser.add_argument("--resume",     default=None, help="Path to checkpoint to resume from")
     args = parser.parse_args()
     train(args)
 
