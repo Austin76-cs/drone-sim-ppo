@@ -136,64 +136,67 @@ def generate_gate_course(
     gate_radius_m: float,
     gate_depth_m: float,
 ) -> list[GateSpec]:
-    """Generate a sequence of gates for a curriculum stage."""
+    """Generate a gate course with true 3D direction changes.
+
+    Tracks a 2D heading vector that turns between gates so the course can go
+    left, right, and curve — not just forward along X. Gate normals are set to
+    the approach direction so passage detection and rewards work correctly.
+
+    Max turn per gate by stage:
+      INTRO   ~5 deg  — nearly straight, good for early learning
+      OFFSET  ~20 deg — gentle curves, some lateral variety
+      SLALOM  ~35 deg — alternating hard turns left/right
+      SPRINT  ~50 deg — aggressive random turns in any direction
+    """
+    # Max yaw turn (radians) applied between consecutive gates
+    _MAX_YAW = {
+        CurriculumStage.INTRO:  0.09,
+        CurriculumStage.OFFSET: 0.35,
+        CurriculumStage.SLALOM: 0.61,
+        CurriculumStage.SPRINT: 0.87,
+    }
+
     gates: list[GateSpec] = []
-    x_position = 2.8
-    prev_offset_y = 0.0
+    pos_xy = np.array([2.8, 0.0], dtype=np.float64)
+    direction = np.array([1.0, 0.0], dtype=np.float64)  # heading, always unit-length
+    prev_turn_sign = 1.0  # for SLALOM alternation
+
+    max_yaw = _MAX_YAW[stage]
 
     for gate_idx in range(spec.num_gates):
-        if stage == CurriculumStage.INTRO:
-            offset_y = 0.0
-        elif stage == CurriculumStage.OFFSET:
-            offset_y = rng.uniform(-spec.lateral_span_m, spec.lateral_span_m)
-        elif stage == CurriculumStage.SPRINT:
-            # Competition-style: mix of slalom, random offsets, and occasional
-            # double-gates (two gates close together)
-            if gate_idx % 3 == 0:
-                # Slalom-style alternating
-                sign = -1.0 if gate_idx % 2 == 0 else 1.0
-                offset_y = sign * rng.uniform(0.8, spec.lateral_span_m)
+        if gate_idx > 0:
+            if stage == CurriculumStage.SLALOM:
+                # Alternate left/right to preserve slalom character
+                prev_turn_sign = -prev_turn_sign
+                yaw_delta = prev_turn_sign * rng.uniform(max_yaw * 0.5, max_yaw)
             else:
-                # Random placement across the full lateral range
-                offset_y = rng.uniform(-spec.lateral_span_m, spec.lateral_span_m)
-            # Ensure meaningful lateral change between consecutive gates
-            if abs(offset_y - prev_offset_y) < 0.35:
-                offset_y = -prev_offset_y * 0.8 + rng.uniform(-0.3, 0.3)
-                offset_y = np.clip(offset_y, -spec.lateral_span_m, spec.lateral_span_m)
-        else:
-            sign = -1.0 if gate_idx % 2 == 0 else 1.0
-            offset_y = sign * rng.uniform(0.45, spec.lateral_span_m)
-            if abs(offset_y - prev_offset_y) < 0.20:
-                offset_y = sign * spec.lateral_span_m
+                yaw_delta = rng.uniform(-max_yaw, max_yaw)
 
-        # Height: base 1m + stage vertical range + extra climbs/dips on later stages
+            c, s = np.cos(yaw_delta), np.sin(yaw_delta)
+            direction = np.array([
+                c * direction[0] - s * direction[1],
+                s * direction[0] + c * direction[1],
+            ])
+            direction /= np.linalg.norm(direction)
+
+        spacing = spec.spacing_m * rng.uniform(0.7, 1.5)
+        pos_xy = pos_xy + direction * spacing
+
+        # Height: add occasional climbs/dips on harder stages
         if stage in (CurriculumStage.SLALOM, CurriculumStage.SPRINT):
             height_bias = rng.choice([-0.6, 0.0, 0.6], p=[0.25, 0.50, 0.25])
         else:
             height_bias = 0.0
-        offset_z = np.clip(
+        z = float(np.clip(
             1.0 + height_bias + rng.uniform(-spec.vertical_span_m, spec.vertical_span_m),
             0.5, 3.0,
-        )
-        center = np.array([x_position, offset_y, offset_z], dtype=np.float64)
+        ))
 
-        if stage == CurriculumStage.SPRINT and gate_idx > 0:
-            # Angled normals: gate faces the approach direction from previous gate
-            approach = center - gates[-1].center
-            approach[2] = 0.0  # keep normal horizontal
-            norm = np.linalg.norm(approach)
-            if norm > 1e-6:
-                normal = approach / norm
-            else:
-                normal = np.array([1.0, 0.0, 0.0], dtype=np.float64)
-        else:
-            normal = np.array([1.0, 0.0, 0.0], dtype=np.float64)
-
-        # Per-gate random radius and spacing for variety
+        center = np.array([pos_xy[0], pos_xy[1], z], dtype=np.float64)
+        # Normal = horizontal approach direction (gate faces the drone coming in)
+        normal = np.array([direction[0], direction[1], 0.0], dtype=np.float64)
         radius = gate_radius_m * rng.uniform(0.75, 1.35)
         gates.append(GateSpec(center=center, normal=normal, radius_m=radius, depth_m=gate_depth_m))
-        x_position += spec.spacing_m * rng.uniform(0.7, 1.5)
-        prev_offset_y = offset_y
 
     return gates
 
@@ -239,24 +242,27 @@ class StageController:
             gate_radius, self.config.gate_depth_m,
         )
 
-        first_gate = gates[0].center
-        spawn_position = first_gate + np.array([
-            -spec.spawn_backtrack_m,
-            rng.uniform(-spec.spawn_xy_jitter_m, spec.spawn_xy_jitter_m),
-            rng.uniform(-spec.spawn_xy_jitter_m, spec.spawn_xy_jitter_m),
-        ], dtype=np.float64)
+        # Spawn behind the first gate facing the approach direction
+        approach_dir = gates[0].normal  # horizontal unit vector toward first gate
+        spawn_position = gates[0].center - approach_dir * spec.spawn_backtrack_m
+        spawn_position[0] += rng.uniform(-spec.spawn_xy_jitter_m, spec.spawn_xy_jitter_m)
+        spawn_position[1] += rng.uniform(-spec.spawn_xy_jitter_m, spec.spawn_xy_jitter_m)
         spawn_position[2] = max(0.55, spawn_position[2])
 
+        # Velocity in the approach direction
+        speed = rng.uniform(0.0, spec.spawn_speed_m_s)
         spawn_velocity = np.array([
-            rng.uniform(0.0, spec.spawn_speed_m_s),
-            rng.uniform(-spec.spawn_speed_m_s * 0.5, spec.spawn_speed_m_s * 0.5),
+            approach_dir[0] * speed + rng.uniform(-spec.spawn_speed_m_s * 0.15, spec.spawn_speed_m_s * 0.15),
+            approach_dir[1] * speed + rng.uniform(-spec.spawn_speed_m_s * 0.15, spec.spawn_speed_m_s * 0.15),
             rng.uniform(-spec.spawn_speed_m_s * 0.35, spec.spawn_speed_m_s * 0.35),
         ], dtype=np.float64)
 
+        # Yaw to face the first gate, with small random jitter
+        spawn_yaw = float(np.arctan2(approach_dir[1], approach_dir[0]))
         spawn_euler = np.array([
             rng.uniform(-spec.spawn_tilt_rad * 0.6, spec.spawn_tilt_rad * 0.6),
             rng.uniform(-spec.spawn_tilt_rad, spec.spawn_tilt_rad),
-            rng.uniform(-0.15, 0.15),
+            spawn_yaw + rng.uniform(-0.15, 0.15),
         ], dtype=np.float64)
 
         spawn_omega = rng.uniform(
