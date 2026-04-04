@@ -27,8 +27,8 @@ yaw_rate_kp = 0.30
 [ppo]
 learning_rate = 3e-4
 n_steps = 2048
-batch_size = 64
-n_epochs = 10
+batch_size = 512
+n_epochs = 5
 gamma = 0.99
 gae_lambda = 0.95
 clip_range = 0.2

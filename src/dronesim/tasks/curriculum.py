@@ -166,7 +166,15 @@ def generate_gate_course(
             if abs(offset_y - prev_offset_y) < 0.20:
                 offset_y = sign * spec.lateral_span_m
 
-        offset_z = 1.0 + rng.uniform(-spec.vertical_span_m, spec.vertical_span_m)
+        # Height: base 1m + stage vertical range + extra climbs/dips on later stages
+        if stage in (CurriculumStage.SLALOM, CurriculumStage.SPRINT):
+            height_bias = rng.choice([-0.6, 0.0, 0.6], p=[0.25, 0.50, 0.25])
+        else:
+            height_bias = 0.0
+        offset_z = np.clip(
+            1.0 + height_bias + rng.uniform(-spec.vertical_span_m, spec.vertical_span_m),
+            0.5, 3.0,
+        )
         center = np.array([x_position, offset_y, offset_z], dtype=np.float64)
 
         if stage == CurriculumStage.SPRINT and gate_idx > 0:
@@ -181,17 +189,24 @@ def generate_gate_course(
         else:
             normal = np.array([1.0, 0.0, 0.0], dtype=np.float64)
 
-        gates.append(GateSpec(center=center, normal=normal, radius_m=gate_radius_m, depth_m=gate_depth_m))
-        x_position += spec.spacing_m
+        # Per-gate random radius and spacing for variety
+        radius = gate_radius_m * rng.uniform(0.75, 1.35)
+        gates.append(GateSpec(center=center, normal=normal, radius_m=radius, depth_m=gate_depth_m))
+        x_position += spec.spacing_m * rng.uniform(0.7, 1.5)
         prev_offset_y = offset_y
 
     return gates
+
+
+# Sampling weights for multi-stage mode: [INTRO, OFFSET, SLALOM, SPRINT]
+_MULTI_STAGE_WEIGHTS = [0.15, 0.20, 0.35, 0.30]
 
 
 @dataclass(slots=True)
 class StageController:
     config: TaskConfig
     stage: CurriculumStage = CurriculumStage.INTRO
+    multi_stage: bool = False
     _history: dict[CurriculumStage, deque[float]] = field(init=False, repr=False)
     _episode_counts: dict[CurriculumStage, int] = field(init=False, repr=False)
 
@@ -205,16 +220,22 @@ class StageController:
         rng: np.random.Generator,
         base_episode_steps: int,
     ) -> EpisodeTask:
-        spec = _get_stage_spec(self.stage, self.config)
+        if self.multi_stage:
+            active_stage = CurriculumStage(
+                rng.choice(len(CurriculumStage), p=_MULTI_STAGE_WEIGHTS)
+            )
+        else:
+            active_stage = self.stage
+        spec = _get_stage_spec(active_stage, self.config)
         max_steps = max(1, int(base_episode_steps * spec.max_steps_scale))
 
         gate_radius = (
             self.config.sprint_gate_radius_m
-            if self.stage == CurriculumStage.SPRINT
+            if active_stage == CurriculumStage.SPRINT
             else self.config.gate_radius_m
         )
         gates = generate_gate_course(
-            spec, self.stage, rng,
+            spec, active_stage, rng,
             gate_radius, self.config.gate_depth_m,
         )
 
@@ -243,7 +264,7 @@ class StageController:
         ).astype(np.float64)
 
         return EpisodeTask(
-            stage=self.stage,
+            stage=active_stage,
             spawn_position=spawn_position,
             spawn_velocity=spawn_velocity,
             spawn_euler=spawn_euler,

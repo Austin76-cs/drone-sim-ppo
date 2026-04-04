@@ -20,6 +20,9 @@ import sys
 import time
 from pathlib import Path
 
+# Force unbuffered output so progress is visible when redirected to a file.
+sys.stdout.reconfigure(line_buffering=True)
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 import torch
@@ -36,7 +39,7 @@ def train(args: argparse.Namespace) -> None:
     print(f"Training on {device}")
 
     # Dataset
-    train_ds, val_ds = split_dataset(args.data, val_fraction=0.1)
+    train_ds, val_ds = split_dataset(args.data, val_fraction=0.1, in_memory=args.in_memory)
     train_loader = DataLoader(
         train_ds, batch_size=args.batch_size, shuffle=True,
         num_workers=args.workers, pin_memory=True, drop_last=True,
@@ -91,7 +94,8 @@ def train(args: argparse.Namespace) -> None:
         model.train()
         train_loss = 0.0
         t0 = time.time()
-        for imgs, heatmaps in train_loader:
+        n_batches = len(train_loader)
+        for batch_idx, (imgs, heatmaps) in enumerate(train_loader):
             imgs     = imgs.to(device, non_blocking=True)
             heatmaps = heatmaps.to(device, non_blocking=True)
 
@@ -105,6 +109,15 @@ def train(args: argparse.Namespace) -> None:
 
             train_loss += loss.item()
             global_step += 1
+
+            # Print a dot every 50 batches so we can confirm the run is alive.
+            if (batch_idx + 1) % 50 == 0:
+                elapsed = time.time() - t0
+                print(
+                    f"  [{batch_idx+1}/{n_batches}] "
+                    f"loss={loss.item():.5f}  {elapsed:.0f}s elapsed",
+                    flush=True,
+                )
 
         train_loss /= len(train_loader)
         scheduler.step()
@@ -125,7 +138,8 @@ def train(args: argparse.Namespace) -> None:
         print(
             f"Epoch {epoch:3d}/{args.epochs}  "
             f"train={train_loss:.5f}  val={val_loss:.5f}  "
-            f"lr={lr:.2e}  {dt:.1f}s"
+            f"lr={lr:.2e}  {dt:.1f}s",
+            flush=True,
         )
         writer.add_scalar("loss/train", train_loss, epoch)
         writer.add_scalar("loss/val",   val_loss,   epoch)
@@ -159,7 +173,7 @@ def train(args: argparse.Namespace) -> None:
             )
 
     writer.close()
-    print(f"\nBest val loss: {best_val_loss:.5f}  → {ckpt_dir}/best_model.pt")
+    print(f"\nBest val loss: {best_val_loss:.5f}  -> {ckpt_dir}/best_model.pt")
 
 
 def main() -> None:
@@ -172,6 +186,7 @@ def main() -> None:
     parser.add_argument("--workers",    type=int,   default=0)
     parser.add_argument("--device",     default="cuda")
     parser.add_argument("--resume",     default=None, help="Path to checkpoint to resume from")
+    parser.add_argument("--in-memory",  action="store_true", help="Load full dataset into RAM (fast, needs ~14 GB RAM)")
     args = parser.parse_args()
     train(args)
 

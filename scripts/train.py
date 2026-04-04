@@ -53,10 +53,14 @@ def main() -> None:
     parser.add_argument("--debug", action="store_true", help="Use DummyVecEnv, 1 env")
     parser.add_argument("--stage", type=int, default=None, choices=[0, 1, 2, 3],
                         help="Force starting curriculum stage: 0=INTRO, 1=OFFSET, 2=SLALOM, 3=SPRINT")
+    parser.add_argument("--multi-stage", action="store_true",
+                        help="Randomize stage each episode to train generalization across all course types")
     args = parser.parse_args()
 
     config = load_config(Path(args.config))
-    stage_controller = StageController(config.task)
+    stage_controller = StageController(config.task, multi_stage=args.multi_stage)
+    if args.multi_stage:
+        print("Multi-stage mode: stage sampled randomly each episode [INTRO=15%, OFFSET=20%, SLALOM=35%, SPRINT=30%]")
     if args.stage is not None:
         from dronesim.tasks.curriculum import CurriculumStage
         stage_controller.force_stage(CurriculumStage(args.stage))

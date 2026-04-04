@@ -92,10 +92,12 @@ def main() -> None:
     parser.add_argument("--model", type=str, required=True, help="Path to model .zip")
     parser.add_argument("--normalize", type=str, default=None)
     parser.add_argument("--config", type=str, default="configs/default.toml")
-    parser.add_argument("--episodes", type=int, default=5)
+    parser.add_argument("--episodes", type=int, default=10)
     parser.add_argument("--speed", type=float, default=1.0, help="Playback speed multiplier")
     parser.add_argument("--stage", type=int, default=None, choices=[0, 1, 2, 3],
                         help="Force curriculum stage: 0=INTRO, 1=OFFSET, 2=SLALOM, 3=SPRINT")
+    parser.add_argument("--multi-stage", action="store_true",
+                        help="Randomly cycle through all stages each episode")
     args = parser.parse_args()
 
     if not HAS_VIEWER:
@@ -105,9 +107,11 @@ def main() -> None:
     config = load_config(Path(args.config))
 
     # Create the actual env we'll visualize
-    from dronesim.tasks.curriculum import CurriculumStage
+    from dronesim.tasks.curriculum import CurriculumStage, _MULTI_STAGE_WEIGHTS
     vis_env = DroneRaceEnv(config)
-    if args.stage is not None:
+    if args.multi_stage:
+        vis_env.stage_controller.multi_stage = True
+    elif args.stage is not None:
         vis_env.stage_controller.force_stage(CurriculumStage(args.stage))
 
     # Create a separate vec_env for the model (handles VecNormalize)
@@ -131,9 +135,9 @@ def main() -> None:
         viewer.cam.elevation = -25  # slightly above
         viewer.cam.lookat[:] = [0, 0, 1]
 
+        run_seed = int(time.time()) % 100000
         for ep in range(args.episodes):
-            # Reset both envs with same seed so they match
-            seed = config.seed + ep * 100
+            seed = run_seed + ep * 100
             obs, info = vis_env.reset(seed=seed)
 
             # Normalize obs the same way VecNormalize would
