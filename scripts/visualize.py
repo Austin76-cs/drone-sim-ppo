@@ -24,45 +24,58 @@ except ImportError:
     HAS_VIEWER = False
 
 
-def add_gate_markers(viewer, gates, current_gate_idx):
-    """Draw gate rings as visual markers in the viewer."""
+def add_gate_markers(viewer, gates, current_gate_idx, passed_indices=None):
+    """Draw square gate frames as visual markers in the viewer."""
     if not hasattr(viewer, 'user_scn') or viewer.user_scn is None:
         return
+    if passed_indices is None:
+        passed_indices = set()
 
     scn = viewer.user_scn
     scn.ngeom = 0
 
     for i, gate in enumerate(gates):
         is_current = (i == current_gate_idx)
-        is_cleared = (i < current_gate_idx)
+        is_passed = (i in passed_indices)
+        is_missed = (i < current_gate_idx and i not in passed_indices)
 
-        n_segments = 16
-        radius = gate.radius_m
         tube_radius = 0.03
+        half_w = (gate.width_m if gate.width_m > 0 else 2.0 * gate.radius_m) / 2.0
+        half_h = (gate.height_m if gate.height_m > 0 else 2.0 * gate.radius_m) / 2.0
 
-        if is_cleared:
-            color = np.array([0.2, 0.8, 0.2, 0.5], dtype=np.float32)
+        if is_passed:
+            color = np.array([0.2, 0.8, 0.2, 0.5], dtype=np.float32)  # green = passed
+        elif is_missed:
+            color = np.array([1.0, 0.0, 0.0, 0.7], dtype=np.float32)  # red = missed
         elif is_current:
-            color = np.array([1.0, 0.3, 0.0, 0.9], dtype=np.float32)
+            color = np.array([1.0, 0.3, 0.0, 0.9], dtype=np.float32)  # orange = target
         else:
-            color = np.array([0.3, 0.3, 1.0, 0.6], dtype=np.float32)
+            color = np.array([0.3, 0.3, 1.0, 0.6], dtype=np.float32)  # blue = upcoming
 
-        for seg in range(n_segments):
+        # Compute gate local axes
+        up = np.array([0.0, 0.0, 1.0])
+        lateral = np.cross(up, gate.normal)
+        lat_norm = np.linalg.norm(lateral)
+        if lat_norm < 1e-6:
+            lateral = np.array([0.0, 1.0, 0.0])
+        else:
+            lateral = lateral / lat_norm
+
+        # 4 corners of the square gate
+        corners = [
+            gate.center + lateral * half_w + up * half_h,   # top-right
+            gate.center - lateral * half_w + up * half_h,   # top-left
+            gate.center - lateral * half_w - up * half_h,   # bottom-left
+            gate.center + lateral * half_w - up * half_h,   # bottom-right
+        ]
+
+        # Draw 4 edges of the square
+        for edge_idx in range(4):
             if scn.ngeom >= scn.maxgeom:
                 break
+            pos_from = corners[edge_idx]
+            pos_to = corners[(edge_idx + 1) % 4]
 
-            angle = 2 * np.pi * seg / n_segments
-            angle_next = 2 * np.pi * (seg + 1) / n_segments
-
-            y1 = radius * np.cos(angle)
-            z1 = radius * np.sin(angle)
-            y2 = radius * np.cos(angle_next)
-            z2 = radius * np.sin(angle_next)
-
-            pos_from = gate.center + np.array([0.0, y1, z1])
-            pos_to = gate.center + np.array([0.0, y2, z2])
-
-            # Use mjv_connector for line segments between two points
             mujoco.mjv_connector(
                 scn.geoms[scn.ngeom],
                 type=mujoco.mjtGeom.mjGEOM_CAPSULE,
@@ -75,7 +88,7 @@ def add_gate_markers(viewer, gates, current_gate_idx):
 
         # Small sphere marker above gate
         if scn.ngeom < scn.maxgeom:
-            label_pos = gate.center + np.array([0.0, 0.0, radius + 0.15])
+            label_pos = gate.center + up * (half_h + 0.15)
             mujoco.mjv_initGeom(
                 scn.geoms[scn.ngeom],
                 type=mujoco.mjtGeom.mjGEOM_SPHERE,
@@ -169,7 +182,7 @@ def main() -> None:
                     norm_obs = obs.reshape(1, -1)
 
                 # Draw gate markers
-                add_gate_markers(viewer, gates, vis_env.gate_index)
+                add_gate_markers(viewer, gates, vis_env.gate_index, vis_env.passed_gate_indices)
 
                 viewer.sync()
                 time.sleep(sleep_time)

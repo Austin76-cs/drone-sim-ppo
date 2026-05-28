@@ -107,6 +107,8 @@ class MuJoCoSim:
 
         self.motor_cmd = np.zeros(4, dtype=np.float64)
         self.mass_scale = 1.0
+        self._wind_constant = np.zeros(3, dtype=np.float64)
+        self._wind_gust_std = 0.0
 
         # --- Perception (Phase 2) ---
         # Find mocap indices for pre-allocated gate ring bodies.
@@ -150,6 +152,12 @@ class MuJoCoSim:
         thrust_per_rotor = np.clip(thrust_per_rotor, self.ctrl_low, self.ctrl_high)
         self.data.ctrl[:4] = thrust_per_rotor
 
+        # Apply wind as external force on the drone body
+        wind_force = self._wind_constant.copy()
+        if self._wind_gust_std > 0:
+            wind_force += np.random.randn(3) * self._wind_gust_std
+        self.data.xfrc_applied[self.drone_body_id, :3] = wind_force
+
         for _ in range(self.decimation):
             mujoco.mj_step(self.model, self.data)
 
@@ -160,9 +168,11 @@ class MuJoCoSim:
         qvel = self.data.qvel[:6].copy()
         pos = qpos[:3]
         euler = quat_wxyz_to_euler(qpos[3:7])
+        rot_matrix = euler_to_rotation_matrix(euler)
         vel = qvel[:3]
         omega = qvel[3:6]
-        return DroneState(pos=pos, vel=vel, euler=euler, omega=omega, motor=self.motor_cmd.copy())
+        return DroneState(pos=pos, vel=vel, euler=euler, omega=omega,
+                          motor=self.motor_cmd.copy(), rot_matrix=rot_matrix)
 
     def check_ground_contact(self) -> bool:
         return float(self.data.qpos[2]) < 0.10
@@ -233,3 +243,16 @@ class MuJoCoSim:
         self.mass_scale = 1.0 + self.config.sim.mass_jitter * scale * jitter
         self.model.body_mass[self.drone_body_id] = self.base_mass * self.mass_scale
         self.model.body_inertia[self.drone_body_id, :] = self.base_inertia * self.mass_scale
+
+        # Wind: random constant direction + gust magnitude scaled by difficulty
+        wind_max = self.config.sim.wind_speed_max_m_s * scale
+        if wind_max > 0:
+            wind_dir = rng.standard_normal(3)
+            wind_dir[2] *= 0.3  # mostly horizontal
+            norm = np.linalg.norm(wind_dir)
+            if norm > 1e-6:
+                wind_dir /= norm
+            self._wind_constant = wind_dir * rng.uniform(0, wind_max)
+        else:
+            self._wind_constant = np.zeros(3, dtype=np.float64)
+        self._wind_gust_std = self.config.sim.wind_gust_std_m_s * scale

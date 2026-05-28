@@ -1,23 +1,29 @@
 [runtime]
 seed = 7
-device = "cpu"
+device = "cuda"
 
 [sim]
 sim_hz = 500
-policy_hz = 50
-episode_seconds = 45.0
+policy_hz = 100
+episode_seconds = 90.0
 model_xml_path = "assets/mjcf/quadrotor.xml"
 gravity = 9.81
-mass_jitter = 0.1
-thrust_noise_std = 0.01
+mass_jitter = 0.03
+thrust_noise_std = 0.005
+wind_speed_max_m_s = 0.0
+wind_gust_std_m_s = 0.0
+obs_noise_pos_std = 0.005
+obs_noise_vel_std = 0.01
+obs_noise_omega_std = 0.01
+action_latency_steps = 1
 
 [drone]
 mass_kg = 1.0
 arm_length_m = 0.12
 max_total_thrust_n = 20.0
-max_vertical_velocity_m_s = 2.0
-max_tilt_rad = 0.45
-max_body_rate_rad_s = 6.0
+max_vertical_velocity_m_s = 4.0
+max_tilt_rad = 1.2
+max_body_rate_rad_s = 15.0
 motor_time_constant_s = 0.03
 vertical_velocity_kp = 0.30
 attitude_kp = 4.0
@@ -25,7 +31,7 @@ body_rate_kp = 0.45
 yaw_rate_kp = 0.30
 
 [ppo]
-learning_rate = 3e-4
+learning_rate = 1e-4
 n_steps = 2048
 batch_size = 512
 n_epochs = 5
@@ -35,20 +41,22 @@ clip_range = 0.2
 ent_coef = 0.001
 net_arch = [256, 256]
 num_envs = 32
-total_timesteps = 3_000_000
+total_timesteps = 30_000_000
 
 [reward]
-gate_proximity = 0.80
-gate_passage_bonus = 10.0
+gate_proximity = 0.10
+gate_passage_bonus = 100.0
+gate_centering = 10.0
 progress = 1.0
-velocity_alignment = 1.50
+velocity_alignment = 2.50
 forward_speed = 0.0
 time_penalty = -0.025
 collision_penalty = -10.0
 control_effort = -0.05
 alive_bonus = 0.0
-gate_miss_penalty = -8.0
+gate_miss_penalty = -12.0
 approach_angle = 0.5
+action_diff_penalty = -0.1
 
 [task]
 curriculum = "gate_race"
@@ -59,10 +67,12 @@ slalom_threshold = 0.64
 sprint_threshold = 0.999
 competition_threshold = 0.50
 gate_radius_m = 0.40
-sprint_gate_radius_m = 0.75
+sprint_gate_radius_m = 0.50
 gate_depth_m = 0.15
 gate_pass_margin_m = 0.12
 base_gate_spacing_m = 2.5
+sprint_miss_limit = 6
+default_miss_limit = 2
 
 [eval]
 n_episodes = 20

@@ -30,39 +30,112 @@ def gate_relative_geometry(
     return forward_error, lateral_error, alignment_error
 
 
-def gate_passed(
+_DRONE_RADIUS = 0.12  # account for drone body size (matches arm_length_m)
+
+
+def _inside_square_gate(cross_pos: NDArray[np.float64], gate: GateSpec) -> bool:
+    """Check if a crossing point is inside the square gate aperture.
+
+    Shrinks the effective aperture by _DRONE_RADIUS on each side to account
+    for the physical size of the drone — the center must clear the frame
+    with margin so the whole drone actually fits through.
+    """
+    rel = cross_pos - gate.center
+    # Remove the forward component (along gate normal)
+    rel_plane = rel - gate.normal * float(np.dot(rel, gate.normal))
+
+    half_w = (gate.width_m if gate.width_m > 0 else 2.0 * gate.radius_m) / 2.0
+    half_h = (gate.height_m if gate.height_m > 0 else 2.0 * gate.radius_m) / 2.0
+
+    # Shrink effective aperture by drone radius
+    effective_half_w = half_w - _DRONE_RADIUS
+    effective_half_h = half_h - _DRONE_RADIUS
+    if effective_half_w <= 0 or effective_half_h <= 0:
+        return False
+
+    # Gate local axes: up is Z, lateral is perpendicular to normal in XY plane
+    up = np.array([0.0, 0.0, 1.0])
+    lateral = np.cross(up, gate.normal)
+    lat_norm = float(np.linalg.norm(lateral))
+    if lat_norm < 1e-6:
+        lateral = np.array([0.0, 1.0, 0.0])
+    else:
+        lateral = lateral / lat_norm
+
+    y_offset = abs(float(np.dot(rel_plane, lateral)))
+    z_offset = abs(float(np.dot(rel_plane, up)))
+    return y_offset <= effective_half_w and z_offset <= effective_half_h
+
+
+def _crossing_offset(cross_pos: NDArray[np.float64], gate: GateSpec) -> float:
+    """Return how far the crossing point is from gate center, normalized to [0, 1].
+
+    0.0 = dead center, 1.0 = at the edge of the effective aperture.
+    Values > 1.0 mean outside the gate.
+    """
+    rel = cross_pos - gate.center
+    rel_plane = rel - gate.normal * float(np.dot(rel, gate.normal))
+
+    half_w = (gate.width_m if gate.width_m > 0 else 2.0 * gate.radius_m) / 2.0
+    half_h = (gate.height_m if gate.height_m > 0 else 2.0 * gate.radius_m) / 2.0
+    effective_half_w = max(half_w - _DRONE_RADIUS, 1e-3)
+    effective_half_h = max(half_h - _DRONE_RADIUS, 1e-3)
+
+    up = np.array([0.0, 0.0, 1.0])
+    lateral = np.cross(up, gate.normal)
+    lat_norm = float(np.linalg.norm(lateral))
+    if lat_norm < 1e-6:
+        lateral = np.array([0.0, 1.0, 0.0])
+    else:
+        lateral = lateral / lat_norm
+
+    y_frac = abs(float(np.dot(rel_plane, lateral))) / effective_half_w
+    z_frac = abs(float(np.dot(rel_plane, up))) / effective_half_h
+    return max(y_frac, z_frac)
+
+
+def gate_crossing_quality(
     state: DroneState, gate: GateSpec, gate_pass_margin_m: float,
     prev_pos: NDArray[np.float64] | None = None,
-) -> bool:
-    forward_error, lateral_error, _ = gate_relative_geometry(state, gate)
+) -> tuple[bool, float]:
+    """Like gate_passed but also returns crossing offset (0=center, 1=edge, >1=outside).
+
+    Returns (passed, offset).  offset is only meaningful when a plane crossing occurred.
+    """
+    forward_error, _, _ = gate_relative_geometry(state, gate)
 
     if prev_pos is not None:
-        # Ray-plane crossing check: did the drone cross the gate plane
-        # between prev_pos and current pos?
         prev_rel = gate.center - prev_pos
         prev_fwd = float(np.dot(prev_rel, gate.normal))
-        # Crossed if prev was in front (positive) and now behind/at plane
         if prev_fwd > 0.0 and forward_error <= gate_pass_margin_m:
-            # Interpolate to find crossing point and check lateral distance
             total = prev_fwd + abs(forward_error)
             if total > 1e-6:
                 t = prev_fwd / total
                 cross_pos = prev_pos + t * (state.pos - prev_pos)
-                cross_lateral = float(np.linalg.norm(
-                    (gate.center - cross_pos)
-                    - gate.normal * float(np.dot(gate.center - cross_pos, gate.normal))
-                ))
-                return cross_lateral <= gate.radius_m
-            return lateral_error <= gate.radius_m
-        return False
+            else:
+                cross_pos = state.pos
+            offset = _crossing_offset(cross_pos, gate)
+            return _inside_square_gate(cross_pos, gate), offset
+        return False, float("inf")
 
-    # Fallback: simple proximity check (no previous position available)
-    return forward_error <= gate_pass_margin_m and lateral_error <= gate.radius_m
+    offset = _crossing_offset(state.pos, gate)
+    passed = forward_error <= gate_pass_margin_m and _inside_square_gate(state.pos, gate)
+    return passed, offset
+
+
+def gate_passed(
+    state: DroneState, gate: GateSpec, gate_pass_margin_m: float,
+    prev_pos: NDArray[np.float64] | None = None,
+) -> bool:
+    passed, _ = gate_crossing_quality(state, gate, gate_pass_margin_m, prev_pos)
+    return passed
 
 
 def body_frame_gate(state: DroneState, gate: GateSpec) -> NDArray[np.float64]:
     """Get gate position relative to drone in body frame."""
     rel_world = gate.center - state.pos
+    if state.rot_matrix is not None:
+        return state.rot_matrix.T @ rel_world
     rot = euler_to_rotation_matrix(state.euler)
     return rot.T @ rel_world
 
@@ -80,7 +153,7 @@ def gate_missed(
     gate_pass_margin: float,
     prev_pos: NDArray[np.float64] | None = None,
 ) -> bool:
-    """Returns True if the drone crossed the gate plane outside the gate radius (a miss)."""
+    """Returns True if the drone crossed the gate plane outside the square gate aperture."""
     if prev_pos is None:
         return False
     forward_error, _, _ = gate_relative_geometry(state, gate)
@@ -91,13 +164,8 @@ def gate_missed(
         if total > 1e-6:
             t = prev_fwd / total
             cross_pos = prev_pos + t * (state.pos - prev_pos)
-            cross_lateral = float(np.linalg.norm(
-                (gate.center - cross_pos)
-                - gate.normal * float(np.dot(gate.center - cross_pos, gate.normal))
-            ))
-            return cross_lateral > gate.radius_m
-        _, lateral_error, _ = gate_relative_geometry(state, gate)
-        return lateral_error > gate.radius_m
+            return not _inside_square_gate(cross_pos, gate)
+        return not _inside_square_gate(state.pos, gate)
     return False
 
 
@@ -164,6 +232,37 @@ def alive_bonus_reward() -> float:
     return 1.0
 
 
+def gate_centering_reward(state: DroneState, gate: GateSpec) -> float:
+    """Dense reward for being centered in the gate aperture when close to the gate plane.
+
+    Activates within 2m in front of the gate and gives high reward for being
+    well-centered on the aperture.  This bridges the gap between the proximity
+    reward (coarse, always-on) and the passage bonus (sparse, only on crossing).
+    """
+    forward_error, lateral_error, _ = gate_relative_geometry(state, gate)
+
+    # Only reward when approaching the gate (0-2m in front)
+    if forward_error > 2.0 or forward_error < -0.5:
+        return 0.0
+
+    # Plane proximity factor: peaks when right at the gate plane
+    plane_factor = math.exp(-abs(forward_error) / 0.5)
+
+    # Centering factor: tight exponential — must be well-centered
+    half_w = (gate.width_m if gate.width_m > 0 else 2.0 * gate.radius_m) / 2.0
+    center_scale = max(0.05, half_w * 0.25)  # much tighter than proximity
+    center_factor = math.exp(-lateral_error / center_scale)
+
+    return plane_factor * center_factor
+
+
+def action_diff_reward(
+    action: NDArray[np.float64], prev_action: NDArray[np.float64]
+) -> float:
+    """Penalize large changes in action between steps (smoothness)."""
+    return float(np.linalg.norm(action - prev_action) / max(math.sqrt(len(action)), 1.0))
+
+
 def compute_total_reward(
     state: DroneState,
     action: NDArray[np.float64],
@@ -173,6 +272,8 @@ def compute_total_reward(
     terminated: bool,
     gate_pass_margin: float,
     prev_pos: NDArray[np.float64] | None = None,
+    prev_action: NDArray[np.float64] | None = None,
+    gate_contact: bool = False,
 ) -> RewardInfo:
     """Compute weighted sum of all reward components."""
     curr_forward_error, _, _ = gate_relative_geometry(state, gate)
@@ -186,8 +287,11 @@ def compute_total_reward(
     r_speed = forward_speed_reward(state)
     r_time = time_penalty_reward()
     r_collision = collision_penalty_reward() if terminated else 0.0
+    r_gate_contact = 1.0 if gate_contact else 0.0
     r_effort = control_effort_reward(action)
     r_alive = alive_bonus_reward()
+    r_action_diff = action_diff_reward(action, prev_action) if prev_action is not None else 0.0
+    r_centering = gate_centering_reward(state, gate)
 
     total = (
         cfg.gate_proximity * r_proximity
@@ -199,8 +303,11 @@ def compute_total_reward(
         + cfg.forward_speed * r_speed
         + cfg.time_penalty * r_time
         + cfg.collision_penalty * r_collision
+        + cfg.collision_penalty * 0.3 * r_gate_contact  # soft: 30% of crash penalty
         + cfg.control_effort * r_effort
         + cfg.alive_bonus * r_alive
+        + cfg.action_diff_penalty * r_action_diff
+        + cfg.gate_centering * r_centering
     )
 
     return RewardInfo(
@@ -216,4 +323,5 @@ def compute_total_reward(
         control_effort=r_effort,
         alive_bonus=r_alive,
         gate_miss=float(r_miss),
+        gate_centering=r_centering,
     )

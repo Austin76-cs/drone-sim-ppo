@@ -15,6 +15,12 @@ class SimConfig:
     gravity: float = 9.81
     mass_jitter: float = 0.1
     thrust_noise_std: float = 0.01
+    wind_speed_max_m_s: float = 1.5
+    wind_gust_std_m_s: float = 0.4
+    obs_noise_pos_std: float = 0.02
+    obs_noise_vel_std: float = 0.05
+    obs_noise_omega_std: float = 0.05
+    action_latency_steps: int = 1
 
 
 @dataclass(slots=True)
@@ -22,9 +28,9 @@ class DroneConfig:
     mass_kg: float = 1.0
     arm_length_m: float = 0.12
     max_total_thrust_n: float = 20.0
-    max_vertical_velocity_m_s: float = 2.0
-    max_tilt_rad: float = 0.45
-    max_body_rate_rad_s: float = 6.0
+    max_vertical_velocity_m_s: float = 4.0
+    max_tilt_rad: float = 1.2
+    max_body_rate_rad_s: float = 15.0
     motor_time_constant_s: float = 0.03
     vertical_velocity_kp: float = 0.30
     attitude_kp: float = 4.0
@@ -60,6 +66,8 @@ class RewardConfig:
     alive_bonus: float = 0.05
     gate_miss_penalty: float = 0.0
     approach_angle: float = 0.0
+    action_diff_penalty: float = -0.1
+    gate_centering: float = 0.0
 
 
 @dataclass(slots=True)
@@ -76,6 +84,8 @@ class TaskConfig:
     gate_depth_m: float = 0.15
     gate_pass_margin_m: float = 0.12
     base_gate_spacing_m: float = 2.5
+    sprint_miss_limit: int = 4
+    default_miss_limit: int = 2
 
 
 @dataclass(slots=True)

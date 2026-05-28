@@ -60,7 +60,10 @@ def main() -> None:
     config = load_config(Path(args.config))
     stage_controller = StageController(config.task, multi_stage=args.multi_stage)
     if args.multi_stage:
-        print("Multi-stage mode: stage sampled randomly each episode [INTRO=15%, OFFSET=20%, SLALOM=35%, SPRINT=30%]")
+        from dronesim.tasks.curriculum import _MULTI_STAGE_WEIGHTS
+        names = ["INTRO", "OFFSET", "SLALOM", "SPRINT"]
+        wstr = ", ".join(f"{n}={w:.0%}" for n, w in zip(names, _MULTI_STAGE_WEIGHTS))
+        print(f"Multi-stage mode: stage sampled randomly each episode [{wstr}]")
     if args.stage is not None:
         from dronesim.tasks.curriculum import CurriculumStage
         stage_controller.force_stage(CurriculumStage(args.stage))
@@ -131,7 +134,11 @@ def main() -> None:
     ]
 
     total_timesteps = 50_000 if args.debug else config.ppo.total_timesteps
-    model.learn(total_timesteps=total_timesteps, callback=callbacks)
+    model.learn(
+        total_timesteps=total_timesteps,
+        callback=callbacks,
+        reset_num_timesteps=True if args.resume else False,
+    )
 
     model.save(f"{checkpoint_dir}/final_model")
     vec_env.save(f"{checkpoint_dir}/vec_normalize.pkl")

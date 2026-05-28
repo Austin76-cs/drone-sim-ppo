@@ -18,22 +18,27 @@ from dronesim.tasks.curriculum import (
 from dronesim.tasks.rewards import (
     body_frame_gate,
     compute_total_reward,
+    gate_crossing_quality,
     gate_missed,
     gate_passed,
     gate_relative_geometry,
 )
-from dronesim.tasks.termination import compute_termination
+from dronesim.tasks.termination import check_gate_collision, compute_termination
 from dronesim.types import DroneState, GateSpec, RewardInfo
 
 
 class DroneRaceEnv(gym.Env):
-    """Gymnasium env for drone gate racing with PPO.
+    """Gymnasium env for drone gate racing with PPO (CTBR architecture).
 
-    Observation (18,): [pos(3), vel(3), euler(3), omega(3), body_gate_cur(3), body_gate_next(3)]
-    Action (4,): [vz, roll, pitch, yaw_rate] in [-1, 1]
+    Observation (34,): [pos(3), vel(3), rot_matrix(9), omega(3), prev_action(4),
+                        body_gate_cur(3), body_gate_next(3), body_gate_+2(3), body_gate_+3(3)]
+    Gates beyond the course end are represented as zero vectors.
+    Action (4,): [thrust, roll_rate, pitch_rate, yaw_rate] in [-1, 1] (CTBR)
     """
 
     metadata = {"render_modes": ["human"]}
+
+    OBS_DIM = 34  # 3+3+9+3+4+12
 
     def __init__(
         self,
@@ -51,7 +56,7 @@ class DroneRaceEnv(gym.Env):
         )
 
         self.observation_space = gym.spaces.Box(
-            low=-np.inf, high=np.inf, shape=(18,), dtype=np.float32
+            low=-np.inf, high=np.inf, shape=(self.OBS_DIM,), dtype=np.float32
         )
         self.action_space = gym.spaces.Box(
             low=-1.0, high=1.0, shape=(4,), dtype=np.float32
@@ -62,13 +67,25 @@ class DroneRaceEnv(gym.Env):
         self.state: DroneState | None = None
         self.gate_index = 0
         self.gates_cleared = 0
+        self.passed_gate_indices: set[int] = set()  # tracks actually passed gates
         self.step_idx = 0
         self.episode_steps = self.base_episode_steps
         self.current_gate_forward_error = 0.0
         self.gate_start_forward_error = 1.0
         self.last_reward_info: RewardInfo | None = None
         self.prev_pos: NDArray[np.float64] | None = None
+        self.prev_action: NDArray[np.float64] = np.zeros(4, dtype=np.float64)
         self.miss_count = 0
+        self.crossing_offsets: list[float] = []  # how centered each gate pass was
+
+        # Stall detection: terminate if no progress toward gate for 5 seconds
+        self._stall_window = int(5.0 * config.sim.policy_hz)
+        self._stall_best_error = float("inf")
+        self._stall_counter = 0
+
+        # Action latency buffer
+        latency = max(0, config.sim.action_latency_steps)
+        self._action_buffer: list[NDArray[np.float64]] = [np.zeros(4, dtype=np.float64)] * (latency + 1)
 
     def _current_gate(self) -> GateSpec:
         assert self.current_task is not None
@@ -82,23 +99,34 @@ class DroneRaceEnv(gym.Env):
             return self.current_task.gates[next_idx]
         return None
 
-    def _build_obs(self) -> NDArray[np.float32]:
-        assert self.state is not None
-        cur_gate_body = body_frame_gate(self.state, self._current_gate())
+    def _gate_at_offset(self, offset: int) -> NDArray[np.float64]:
+        """Return gate body-frame vector at gate_index+offset, or zeros if past end."""
+        assert self.current_task is not None and self.state is not None
+        idx = self.gate_index + offset
+        if idx < len(self.current_task.gates):
+            return body_frame_gate(self.state, self.current_task.gates[idx])
+        return np.zeros(3, dtype=np.float64)
 
-        next_gate = self._next_gate()
-        if next_gate is not None:
-            next_gate_body = body_frame_gate(self.state, next_gate)
-        else:
-            next_gate_body = np.zeros(3, dtype=np.float64)
+    def _build_obs(self) -> NDArray[np.float32]:
+        assert self.state is not None and self.current_task is not None
+        sim_cfg = self.config.sim
+        scale = self.current_task.randomization_scale
+
+        # Apply observation noise scaled by difficulty
+        pos = self.state.pos + self.rng.normal(0, sim_cfg.obs_noise_pos_std * scale, 3)
+        vel = self.state.vel + self.rng.normal(0, sim_cfg.obs_noise_vel_std * scale, 3)
+        omega = self.state.omega + self.rng.normal(0, sim_cfg.obs_noise_omega_std * scale, 3)
 
         obs = np.concatenate([
-            self.state.pos,
-            self.state.vel,
-            self.state.euler,
-            self.state.omega,
-            cur_gate_body,
-            next_gate_body,
+            pos,                                     # 3
+            vel,                                     # 3
+            self.state.rot_matrix.flatten(),          # 9
+            omega,                                   # 3
+            self.prev_action,                        # 4
+            self._gate_at_offset(0),                 # 3
+            self._gate_at_offset(1),                 # 3
+            self._gate_at_offset(2),                 # 3
+            self._gate_at_offset(3),                 # 3
         ]).astype(np.float32)
         return obs
 
@@ -108,15 +136,26 @@ class DroneRaceEnv(gym.Env):
         self.current_gate_forward_error = forward_error
         self.gate_start_forward_error = max(0.5, forward_error)
 
+    def _reset_stall_tracker(self) -> None:
+        self._stall_best_error = float("inf")
+        self._stall_counter = 0
+
     def _advance_gate(self) -> bool:
         """Check gate passage. Returns True if all gates cleared (success)."""
         assert self.current_task is not None and self.state is not None
-        if not gate_passed(self.state, self._current_gate(), self.current_task.gate_pass_margin_m, self.prev_pos):
+        passed, offset = gate_crossing_quality(
+            self.state, self._current_gate(),
+            self.current_task.gate_pass_margin_m, self.prev_pos,
+        )
+        if not passed:
             return False
+        self.passed_gate_indices.add(self.gate_index)
+        self.crossing_offsets.append(offset)
         self.gates_cleared += 1
         if self.gate_index + 1 < len(self.current_task.gates):
             self.gate_index += 1
             self._set_gate_progress_reference()
+            self._reset_stall_tracker()
             return False
         return True
 
@@ -148,9 +187,16 @@ class DroneRaceEnv(gym.Env):
         self.episode_steps = self.current_task.max_steps
         self.gate_index = 0
         self.gates_cleared = 0
+        self.passed_gate_indices = set()
         self.step_idx = 0
         self.miss_count = 0
+        self.crossing_offsets = []
         self.last_reward_info = None
+        self.prev_action = np.zeros(4, dtype=np.float64)
+        self._stall_best_error = float("inf")
+        self._stall_counter = 0
+        latency = max(0, self.config.sim.action_latency_steps)
+        self._action_buffer = [np.zeros(4, dtype=np.float64)] * (latency + 1)
 
         # Build qpos/qvel for MuJoCo reset
         quat = euler_to_quat_wxyz(self.current_task.spawn_euler)
@@ -179,9 +225,13 @@ class DroneRaceEnv(gym.Env):
 
         action = np.clip(action.astype(np.float64), -1.0, 1.0)
 
-        # Attitude controller -> rotor commands
+        # Action latency: buffer the action and use the delayed one
+        self._action_buffer.append(action.copy())
+        delayed_action = self._action_buffer.pop(0)
+
+        # CTBR controller -> rotor commands (uses delayed action)
         rotor_cmd = compute_rotor_commands(
-            action, self.state, self.config.drone,
+            delayed_action, self.state, self.config.drone,
             self.sim.mass_scale, self.config.sim.gravity,
         )
 
@@ -199,29 +249,59 @@ class DroneRaceEnv(gym.Env):
             self.state, self._current_gate()
         )
 
-        # Check termination
+        # Check termination (hard crashes only)
         terminated, crash_type = compute_termination(
             self.state, self._current_gate(), self.current_task.max_distance_m,
         )
+
+        # Soft collision: penalty but no termination
+        gate_contact = check_gate_collision(self.state, self._current_gate())
+
         # Compute reward (includes gate_miss_penalty if drone crossed gate plane off-center)
         reward_info = compute_total_reward(
             self.state, action, self._current_gate(),
             prev_forward_error, self.config.reward,
             terminated, self.current_task.gate_pass_margin_m,
             self.prev_pos,
+            self.prev_action,
+            gate_contact,
         )
         self.last_reward_info = reward_info
+        self.prev_action = action.copy()
 
         # Check gate passage
         success = self._advance_gate()
 
-        # Soft miss termination: allow 1 miss per episode (grace), terminate on 2nd.
-        # Backtracking is risky — retrying the same gate is the drone's 2nd miss attempt.
+        # Soft miss termination: allow misses before ending the episode.
+        # SPRINT gets 4 misses (10 gates, tight turns) to provide more learning signal.
+        # Other stages get 2 misses.
+        # On a miss, advance the gate pointer so the drone always targets the next gate
+        # rather than getting stuck chasing a gate it already flew past.
         if not success and reward_info.gate_miss > 0.5:
             self.miss_count += 1
-            if not terminated and self.miss_count >= 2:
+            if self.gate_index + 1 < len(self.current_task.gates):
+                self.gate_index += 1
+                self._set_gate_progress_reference()
+                self._reset_stall_tracker()
+            if self.current_task.stage == CurriculumStage.SPRINT:
+                # Scale miss limit with gate count: ~60% of gates allowed as misses
+                miss_limit = max(3, int(len(self.current_task.gates) * 0.6))
+            else:
+                miss_limit = self.config.task.default_miss_limit
+            if not terminated and self.miss_count >= miss_limit:
                 terminated = True
                 crash_type = "miss_limit"
+
+        # Stall detection: terminate if no forward progress for too long
+        if not terminated and not success:
+            if self.current_gate_forward_error < self._stall_best_error - 0.05:
+                self._stall_best_error = self.current_gate_forward_error
+                self._stall_counter = 0
+            else:
+                self._stall_counter += 1
+            if self._stall_counter >= self._stall_window:
+                terminated = True
+                crash_type = "stall"
 
         # Gate passage bonus handled in reward via gate_passage_reward
         truncated = self.step_idx + 1 >= self.episode_steps
@@ -267,6 +347,12 @@ class DroneRaceEnv(gym.Env):
             "reward_velocity_alignment": reward_info.velocity_alignment,
             "reward_forward_speed": reward_info.forward_speed,
             "reward_control_effort": reward_info.control_effort,
+            "reward_gate_centering": reward_info.gate_centering,
+            "crossing_offsets": list(self.crossing_offsets),
+            "avg_crossing_offset": (
+                sum(self.crossing_offsets) / len(self.crossing_offsets)
+                if self.crossing_offsets else float("nan")
+            ),
         }
 
         return obs, reward_info.total, terminated or success, truncated, info

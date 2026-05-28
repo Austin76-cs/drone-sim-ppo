@@ -14,14 +14,17 @@ class DroneState:
     euler: NDArray[np.float64]     # (3,) roll, pitch, yaw
     omega: NDArray[np.float64]     # (3,) body rates
     motor: NDArray[np.float64]     # (4,) current motor commands
+    rot_matrix: NDArray[np.float64] = None  # (3,3) rotation matrix, set by sim
 
 
 @dataclass(slots=True, frozen=True)
 class GateSpec:
     center: NDArray[np.float64]    # (3,)
     normal: NDArray[np.float64]    # (3,)
-    radius_m: float
+    radius_m: float                # half-width of square gate (pass radius)
     depth_m: float
+    width_m: float = 0.0          # full width of square gate (0 = use 2*radius_m)
+    height_m: float = 0.0         # full height of square gate (0 = use 2*radius_m)
 
 
 @dataclass(slots=True)
@@ -38,6 +41,7 @@ class RewardInfo:
     alive_bonus: float = 0.0
     gate_miss: float = 0.0
     approach_angle: float = 0.0
+    gate_centering: float = 0.0
 
 
 @dataclass(slots=True)

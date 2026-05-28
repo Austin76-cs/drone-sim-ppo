@@ -111,20 +111,22 @@ def _get_stage_spec(stage: CurriculumStage, config: TaskConfig) -> StageSpec:
             max_distance_m=5.5,
             randomization_scale=1.00,
         )
-    # SPRINT: competition-realistic stage modeled after A2RL/AI Grand Prix
+    # SPRINT: competition-realistic stage modeled after DCL Q1
+    # Randomized difficulty: 5-15 gates, up to 70° turns, variable spacing
+    # Base values here — sample_task randomizes num_gates and spacing per episode
     return StageSpec(
         mastery_threshold=config.competition_threshold,
         max_steps_scale=1.00,
-        num_gates=10,
-        spacing_m=config.base_gate_spacing_m * 2.0,
+        num_gates=10,  # overridden per-episode in sample_task
+        spacing_m=config.base_gate_spacing_m * 2.0,  # overridden per-episode
         lateral_span_m=2.5,
-        vertical_span_m=0.8,
+        vertical_span_m=1.2,
         spawn_backtrack_m=3.0,
         spawn_xy_jitter_m=0.25,
         spawn_tilt_rad=0.30,
         spawn_speed_m_s=0.40,
         spawn_omega_rad_s=1.5,
-        max_distance_m=8.0,
+        max_distance_m=15.0,  # increased for wider spacing
         randomization_scale=1.00,
     )
 
@@ -153,7 +155,7 @@ def generate_gate_course(
         CurriculumStage.INTRO:  0.09,
         CurriculumStage.OFFSET: 0.35,
         CurriculumStage.SLALOM: 0.61,
-        CurriculumStage.SPRINT: 0.87,
+        CurriculumStage.SPRINT: 1.22,  # ~70° turns for Q1 generalization
     }
 
     gates: list[GateSpec] = []
@@ -183,26 +185,35 @@ def generate_gate_course(
         pos_xy = pos_xy + direction * spacing
 
         # Height: add occasional climbs/dips on harder stages
-        if stage in (CurriculumStage.SLALOM, CurriculumStage.SPRINT):
+        if stage == CurriculumStage.SPRINT:
+            height_bias = rng.choice([-1.0, -0.4, 0.0, 0.4, 1.0],
+                                     p=[0.15, 0.15, 0.40, 0.15, 0.15])
+        elif stage == CurriculumStage.SLALOM:
             height_bias = rng.choice([-0.6, 0.0, 0.6], p=[0.25, 0.50, 0.25])
         else:
             height_bias = 0.0
         z = float(np.clip(
             1.0 + height_bias + rng.uniform(-spec.vertical_span_m, spec.vertical_span_m),
-            0.5, 3.0,
+            0.4, 5.0,
         ))
 
         center = np.array([pos_xy[0], pos_xy[1], z], dtype=np.float64)
         # Normal = horizontal approach direction (gate faces the drone coming in)
         normal = np.array([direction[0], direction[1], 0.0], dtype=np.float64)
-        radius = gate_radius_m * rng.uniform(0.75, 1.35)
-        gates.append(GateSpec(center=center, normal=normal, radius_m=radius, depth_m=gate_depth_m))
+        # Square gates: randomize size slightly
+        size_scale = rng.uniform(0.85, 1.15)
+        gate_w = gate_radius_m * 2.0 * size_scale
+        gate_h = gate_radius_m * 2.0 * size_scale
+        radius = min(gate_w, gate_h) / 2.0  # pass radius = half the smaller dimension
+        gates.append(GateSpec(center=center, normal=normal, radius_m=radius,
+                              depth_m=gate_depth_m, width_m=gate_w, height_m=gate_h))
 
     return gates
 
 
 # Sampling weights for multi-stage mode: [INTRO, OFFSET, SLALOM, SPRINT]
-_MULTI_STAGE_WEIGHTS = [0.15, 0.20, 0.35, 0.30]
+# Heavy SPRINT focus (60%) — v75 hit 47% SPRINT, push for 60%+
+_MULTI_STAGE_WEIGHTS = [0.05, 0.05, 0.30, 0.60]
 
 
 @dataclass(slots=True)
@@ -230,6 +241,28 @@ class StageController:
         else:
             active_stage = self.stage
         spec = _get_stage_spec(active_stage, self.config)
+
+        # Randomize SPRINT: variable gate count and spacing each episode
+        if active_stage == CurriculumStage.SPRINT:
+            rand_num_gates = int(rng.integers(5, 16))  # 5-15 gates
+            rand_spacing = self.config.base_gate_spacing_m * rng.uniform(1.2, 4.0)  # 3-10m
+            rand_max_dist = max(15.0, rand_spacing * 2.5)
+            spec = StageSpec(
+                mastery_threshold=spec.mastery_threshold,
+                max_steps_scale=spec.max_steps_scale,
+                num_gates=rand_num_gates,
+                spacing_m=rand_spacing,
+                lateral_span_m=spec.lateral_span_m,
+                vertical_span_m=spec.vertical_span_m,
+                spawn_backtrack_m=spec.spawn_backtrack_m,
+                spawn_xy_jitter_m=spec.spawn_xy_jitter_m,
+                spawn_tilt_rad=spec.spawn_tilt_rad,
+                spawn_speed_m_s=spec.spawn_speed_m_s,
+                spawn_omega_rad_s=spec.spawn_omega_rad_s,
+                max_distance_m=rand_max_dist,
+                randomization_scale=spec.randomization_scale,
+            )
+
         max_steps = max(1, int(base_episode_steps * spec.max_steps_scale))
 
         gate_radius = (
